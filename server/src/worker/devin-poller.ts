@@ -63,7 +63,7 @@ async function pollDevinSessions(): Promise<void> {
             logActivity(session.file_id, file.path, file.status, 'needs_human', `${file.path} → Needs Human (Timed Out) ⚠️`);
           }
 
-          updateBatchProgress(session.batch_id, 'failed');
+          incrementBatchFailed(session.batch_id);
           continue;
         }
       }
@@ -117,7 +117,7 @@ async function pollDevinSessions(): Promise<void> {
           logActivity(session.file_id, file.path, file.status, 'failed', `${file.path} → Failed ❌`);
         }
 
-        updateBatchProgress(session.batch_id, 'failed');
+        incrementBatchFailed(session.batch_id);
       }
       // If still running, do nothing — will check again next poll
     } catch (err) {
@@ -126,15 +126,11 @@ async function pollDevinSessions(): Promise<void> {
   }
 }
 
-function updateBatchProgress(batchId: string | null, result: 'completed' | 'failed'): void {
+function incrementBatchFailed(batchId: string | null): void {
   if (!batchId) return;
 
   const db = getDb();
-  if (result === 'completed') {
-    db.prepare("UPDATE batches SET completed = completed + 1 WHERE id = ?").run(batchId);
-  } else {
-    db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
-  }
+  db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
 
   // Check if batch is fully done
   const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId) as {
