@@ -25,8 +25,14 @@ interface GetSessionResponse {
   updated_at?: string;
 }
 
-export async function createSession(prompt: string): Promise<CreateSessionResponse> {
+export async function createSession(prompt: string, filePath?: string): Promise<CreateSessionResponse> {
   const token = getToken();
+
+  const body: Record<string, unknown> = { prompt };
+  if (filePath) {
+    body.title = `[API Migration] Convert ${filePath} to TypeScript`;
+    body.tags = ['ts-migration', 'automated', 'api-created'];
+  }
 
   const response = await fetch(`${DEVIN_API_BASE_URL}/sessions`, {
     method: 'POST',
@@ -34,7 +40,7 @@ export async function createSession(prompt: string): Promise<CreateSessionRespon
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -52,11 +58,12 @@ export async function createSession(prompt: string): Promise<CreateSessionRespon
  */
 export async function createSessionWithRetry(
   prompt: string,
+  filePath?: string,
   maxRetries: number = 3
 ): Promise<CreateSessionResponse> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await createSession(prompt);
+      const response = await createSession(prompt, filePath);
       return response;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);

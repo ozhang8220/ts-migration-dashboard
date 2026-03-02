@@ -280,7 +280,7 @@ export async function startNextBatch(batchSize: number): Promise<{
           { repoFullName, baseBranch, alreadyConverted }
         );
 
-        const session = await createSessionWithRetry(prompt);
+        const session = await createSessionWithRetry(prompt, file.path);
 
         const sessionId = `sess-${uuidv4().slice(0, 8)}`;
         db.prepare(
