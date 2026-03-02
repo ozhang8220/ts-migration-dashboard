@@ -97,7 +97,8 @@ async function pollDevinSessions(): Promise<void> {
           logActivity(session.file_id, file.path, file.status, 'pr_open', `${file.path} → PR Open 🟡`);
         }
 
-        updateBatchProgress(session.batch_id, 'completed');
+        // Note: We do NOT increment batch.completed here — that happens in the
+        // github-poller when the PR is actually merged. This avoids double-counting.
 
       } else if (sessionData.status_enum === 'failed' || sessionData.status_enum === 'stopped') {
         console.log(`[devin-poller] Session ${session.devin_session_id} ${sessionData.status_enum}`);

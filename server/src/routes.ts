@@ -168,7 +168,11 @@ router.post('/batches', async (req: Request, res: Response) => {
     const mergedFiles = db.prepare(
       "SELECT path FROM files WHERE status = 'merged'"
     ).all() as { path: string }[];
-    const alreadyConverted = mergedFiles.map(f => f.path.replace(/\.(js|jsx)$/, '.ts'));
+    const alreadyConverted = mergedFiles.map(f =>
+      f.path.endsWith('.jsx')
+        ? f.path.replace(/\.jsx$/, '.tsx')
+        : f.path.replace(/\.js$/, '.ts')
+    );
 
     for (const file of pendingFiles) {
       try {
