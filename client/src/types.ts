@@ -48,5 +48,6 @@ export interface ActivityEntry {
 export interface BatchResponse {
   batchId: string;
   filesQueued: number;
+  devinEnabled?: boolean;
   files: MigrationFile[];
 }

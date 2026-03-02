@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import routes from './routes';
 import { getDb } from './database';
+import { startDevinPoller } from './worker/devin-poller';
+import { startGitHubPoller } from './worker/github-poller';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +27,10 @@ getDb();
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+
+  // Start background pollers
+  startDevinPoller();
+  startGitHubPoller();
 });
 
 export default app;
