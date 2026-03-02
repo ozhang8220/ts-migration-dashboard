@@ -1,6 +1,11 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env from project root (one level up from server/)
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
+
 import express from 'express';
 import cors from 'cors';
-import path from 'path';
 import routes from './routes';
 import { getDb } from './database';
 import { startDevinPoller } from './worker/devin-poller';
