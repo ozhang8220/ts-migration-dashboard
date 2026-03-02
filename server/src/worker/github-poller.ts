@@ -79,6 +79,13 @@ async function pollGitHubPRs(): Promise<void> {
           "UPDATE files SET status = 'needs_human', error_reason = 'PR closed without merge', updated_at = datetime('now') WHERE id = ?"
         ).run(file.id);
         logActivity(file.id, file.path, 'pr_open', 'needs_human', `${file.path} → Needs Human (PR Closed) ⚠️`);
+
+        // Track as failure so batch can finalize
+        const closedBatchId = (db.prepare('SELECT batch_id FROM files WHERE id = ?').get(file.id) as { batch_id: string | null })?.batch_id;
+        if (closedBatchId) {
+          db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(closedBatchId);
+          checkBatchCompletion(closedBatchId);
+        }
       }
       // If still open, do nothing — will check again next poll
     } catch (err) {
