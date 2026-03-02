@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Stats, MigrationFile, Batch, ActivityEntry, BatchResponse } from '../types';
+import type { Stats, MigrationFile, Batch, ActivityEntry, BatchResponse, ErrorLogEntry, AnalysisResult } from '../types';
 
 const API_BASE = '/api';
 
@@ -20,22 +20,25 @@ export function useDashboardData() {
   const [files, setFiles] = useState<MigrationFile[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [errors, setErrors] = useState<ErrorLogEntry[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [statsData, filesData, batchesData, activityData] = await Promise.all([
+      const [statsData, filesData, batchesData, activityData, errorsData] = await Promise.all([
         fetchJson<Stats>('/stats'),
         fetchJson<MigrationFile[]>('/files'),
         fetchJson<Batch[]>('/batches'),
         fetchJson<ActivityEntry[]>('/activity'),
+        fetchJson<ErrorLogEntry[]>('/errors'),
       ]);
       setStats(statsData);
       setFiles(filesData);
       setBatches(batchesData);
       setActivity(activityData);
+      setErrors(errorsData);
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
@@ -68,16 +71,44 @@ export function useDashboardData() {
     await refresh();
   }, [refresh]);
 
+  const analyzeRepo = useCallback(async (repoFullName: string, branch: string): Promise<AnalysisResult> => {
+    const result = await fetchJson<AnalysisResult>('/analyze', {
+      method: 'POST',
+      body: JSON.stringify({ repoFullName, branch }),
+    });
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const toggleAutoProgress = useCallback(async (enabled: boolean): Promise<void> => {
+    await fetchJson('/config', {
+      method: 'PATCH',
+      body: JSON.stringify({ autoProgress: enabled }),
+    });
+    await refresh();
+  }, [refresh]);
+
+  const resumeBatch = useCallback(async (batchId: string): Promise<void> => {
+    await fetchJson(`/batches/${batchId}/resume`, {
+      method: 'POST',
+    });
+    await refresh();
+  }, [refresh]);
+
   return {
     stats,
     files,
     batches,
     activity,
+    errors,
     lastUpdated,
     loading,
     error,
     refresh,
     startBatch,
     updateFileStatus,
+    analyzeRepo,
+    toggleAutoProgress,
+    resumeBatch,
   };
 }

@@ -1,6 +1,16 @@
 import { useState, useMemo } from 'react';
 import type { MigrationFile, FileStatus } from '../types';
 
+function formatDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return `${hours}h ${remainMinutes}m`;
+}
+
 interface Props {
   files: MigrationFile[];
   onStatusChange: (fileId: string, status: string) => void;
@@ -113,6 +123,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
               <SortHeader field="dep_depth">Depth</SortHeader>
               <SortHeader field="loc">LOC</SortHeader>
               <SortHeader field="status">Status</SortHeader>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Duration</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">PR Link</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
             </tr>
@@ -144,6 +155,9 @@ export default function FileTable({ files, onStatusChange }: Props) {
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusCfg.classes}`}>
                       {statusCfg.label}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-400">
+                    {file.session_duration != null ? formatDuration(file.session_duration) : '—'}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     {file.pr_url ? (

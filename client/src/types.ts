@@ -16,6 +16,20 @@ export interface MigrationFile {
   error_reason: string | null;
   created_at: string;
   updated_at: string;
+  session_duration: number | null;
+}
+
+export interface RateLimitInfo {
+  remaining: number | null;
+  total: number | null;
+  resetsAt: string | null;
+}
+
+export interface RepoConfig {
+  owner: string | null;
+  repo: string | null;
+  branch: string;
+  autoProgress: boolean;
 }
 
 export interface Stats {
@@ -23,6 +37,12 @@ export interface Stats {
   byStatus: Record<string, number>;
   byComplexity: Record<string, number>;
   progressPercent: number;
+  totalSessionDurationSeconds: number;
+  sessionCount: number;
+  rateLimit: RateLimitInfo;
+  repoConfig: RepoConfig | null;
+  devinConfigured: boolean;
+  githubConfigured: boolean;
 }
 
 export interface Batch {
@@ -50,4 +70,29 @@ export interface BatchResponse {
   filesQueued: number;
   devinEnabled?: boolean;
   files: MigrationFile[];
+}
+
+export interface ErrorLogEntry {
+  id: number;
+  source: string;
+  message: string;
+  details: string | null;
+  created_at: string;
+}
+
+export interface AnalysisResult {
+  totalFiles: number;
+  byComplexity: Record<string, number>;
+  byDepth: Record<string, number>;
+  files: Array<{
+    id: string;
+    path: string;
+    loc: number;
+    importCount: number;
+    importedBy: number;
+    depDepth: number;
+    complexity: string;
+    hasJsx: boolean;
+  }>;
+  message?: string;
 }

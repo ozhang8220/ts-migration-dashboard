@@ -3,6 +3,8 @@ import ProgressSection from './components/ProgressSection';
 import FileTable from './components/FileTable';
 import ActionPanel from './components/ActionPanel';
 import ActivityFeed from './components/ActivityFeed';
+import AnalyzeForm from './components/AnalyzeForm';
+import ErrorsPanel from './components/ErrorsPanel';
 
 function formatTimestamp(date: Date): string {
   return date.toLocaleTimeString('en-US', {
@@ -19,11 +21,15 @@ export default function App() {
     files,
     batches,
     activity,
+    errors,
     lastUpdated,
     loading,
     error,
     startBatch,
     updateFileStatus,
+    analyzeRepo,
+    toggleAutoProgress,
+    resumeBatch,
   } = useDashboardData();
 
   if (loading) {
@@ -52,6 +58,13 @@ export default function App() {
     );
   }
 
+  const showAnalyzeForm = stats && stats.totalFiles === 0;
+  const repoConfig = stats?.repoConfig;
+  const repoName = repoConfig?.owner && repoConfig?.repo
+    ? `${repoConfig.owner}/${repoConfig.repo}`
+    : 'TypeScript Migration';
+  const autoProgress = repoConfig?.autoProgress ?? false;
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Header */}
@@ -62,13 +75,25 @@ export default function App() {
               TS
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-100">ShopDirect TypeScript Migration</h1>
+              <h1 className="text-xl font-bold text-gray-100">{repoName}</h1>
               <p className="text-xs text-gray-500">Automated JS → TS migration tracking</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Last updated: {formatTimestamp(lastUpdated)}</span>
+          <div className="flex items-center gap-4 text-sm text-gray-500">
+            {stats && (
+              <div className="flex items-center gap-2">
+                {stats.devinConfigured && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">Devin</span>
+                )}
+                {stats.githubConfigured && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-700 border border-gray-600 text-gray-300">GitHub</span>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Last updated: {formatTimestamp(lastUpdated)}</span>
+            </div>
           </div>
         </div>
       </header>
@@ -81,18 +106,32 @@ export default function App() {
           </div>
         )}
 
-        {stats && <ProgressSection stats={stats} />}
+        {showAnalyzeForm ? (
+          <AnalyzeForm onAnalyze={analyzeRepo} />
+        ) : (
+          <>
+            {stats && <ProgressSection stats={stats} />}
 
-        <div className="grid grid-cols-3 gap-8">
-          <div className="col-span-2">
-            <ActionPanel batches={batches} onStartBatch={startBatch} />
-          </div>
-          <div className="col-span-1">
-            <ActivityFeed activity={activity} />
-          </div>
-        </div>
+            <div className="grid grid-cols-3 gap-8">
+              <div className="col-span-2">
+                <ActionPanel
+                  batches={batches}
+                  autoProgress={autoProgress}
+                  onStartBatch={startBatch}
+                  onToggleAutoProgress={toggleAutoProgress}
+                  onResumeBatch={resumeBatch}
+                />
+              </div>
+              <div className="col-span-1">
+                <ActivityFeed activity={activity} />
+              </div>
+            </div>
 
-        <FileTable files={files} onStatusChange={updateFileStatus} />
+            <FileTable files={files} onStatusChange={updateFileStatus} />
+
+            <ErrorsPanel errors={errors} />
+          </>
+        )}
       </main>
     </div>
   );

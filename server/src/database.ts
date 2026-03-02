@@ -16,6 +16,7 @@ export function getDb(): Database.Database {
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
     initializeSchema();
+    runMigrations();
   }
   return db;
 }
@@ -60,7 +61,8 @@ function initializeSchema(): void {
       pr_number INTEGER,
       started_at TEXT,
       completed_at TEXT,
-      error_message TEXT
+      error_message TEXT,
+      duration_seconds INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS activity_log (
@@ -72,8 +74,52 @@ function initializeSchema(): void {
       message TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS repo_config (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      branch TEXT NOT NULL DEFAULT 'main',
+      auto_progress INTEGER NOT NULL DEFAULT 0,
+      analyzed_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS error_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL,
+      message TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `;
   db.exec(schema);
+}
+
+function runMigrations(): void {
+  // Add duration_seconds to devin_sessions if missing (for existing DBs)
+  try {
+    db.prepare("SELECT duration_seconds FROM devin_sessions LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE devin_sessions ADD COLUMN duration_seconds INTEGER"); } catch { /* already exists */ }
+  }
+
+  // Add auto_progress to repo_config if missing (for existing DBs)
+  try {
+    db.prepare("SELECT auto_progress FROM repo_config LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE repo_config ADD COLUMN auto_progress INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  }
+}
+
+export function logError(source: string, message: string, details?: string): void {
+  try {
+    const database = getDb();
+    database.prepare(
+      "INSERT INTO error_log (source, message, details, created_at) VALUES (?, ?, ?, datetime('now'))"
+    ).run(source, message, details || null);
+  } catch (err) {
+    console.error(`[error-log] Failed to log error from ${source}:`, err);
+  }
 }
 
 export function closeDb(): void {

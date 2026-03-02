@@ -3,16 +3,20 @@ import type { Batch, BatchResponse } from '../types';
 
 interface Props {
   batches: Batch[];
+  autoProgress: boolean;
   onStartBatch: (batchSize: number) => Promise<BatchResponse>;
+  onToggleAutoProgress: (enabled: boolean) => Promise<void>;
+  onResumeBatch: (batchId: string) => Promise<void>;
 }
 
-export default function ActionPanel({ batches, onStartBatch }: Props) {
+export default function ActionPanel({ batches, autoProgress, onStartBatch, onToggleAutoProgress, onResumeBatch }: Props) {
   const [batchSize, setBatchSize] = useState(5);
   const [isStarting, setIsStarting] = useState(false);
   const [lastResult, setLastResult] = useState<BatchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const activeBatch = batches.find((b) => b.status === 'running');
+  const haltedBatch = batches.find((b) => b.status === 'halted');
 
   const handleStart = async () => {
     setIsStarting(true);
@@ -27,9 +31,38 @@ export default function ActionPanel({ batches, onStartBatch }: Props) {
     }
   };
 
+  const handleResume = async () => {
+    if (!haltedBatch) return;
+    try {
+      await onResumeBatch(haltedBatch.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resume batch');
+    }
+  };
+
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
       <h2 className="text-lg font-semibold text-gray-100 mb-4">Batch Control</h2>
+
+      {/* Halted batch warning banner */}
+      {haltedBatch && (
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-red-400">Batch Halted</p>
+              <p className="text-xs text-red-300/70 mt-1">
+                Batch {haltedBatch.id} was halted due to {haltedBatch.failed}+ failures. Auto-progression is paused.
+              </p>
+            </div>
+            <button
+              onClick={handleResume}
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg text-sm transition-colors"
+            >
+              Resume
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
@@ -62,6 +95,23 @@ export default function ActionPanel({ batches, onStartBatch }: Props) {
             'Start Next Batch'
           )}
         </button>
+
+        {/* Auto-progress toggle */}
+        <div className="flex items-center gap-2 ml-auto">
+          <label className="text-sm text-gray-400">Auto-progress:</label>
+          <button
+            onClick={() => onToggleAutoProgress(!autoProgress)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              autoProgress ? 'bg-indigo-600' : 'bg-gray-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                autoProgress ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -108,14 +158,22 @@ export default function ActionPanel({ batches, onStartBatch }: Props) {
               <div key={batch.id} className="flex items-center justify-between text-sm p-2 bg-gray-800/50 rounded-lg">
                 <span className="font-mono text-gray-300">{batch.id}</span>
                 <div className="flex items-center gap-3">
-                  <span className="text-gray-400">{batch.total_files} files</span>
+                  <span className="text-gray-400">
+                    {batch.total_files} files
+                    {batch.completed > 0 && <span className="text-emerald-400 ml-1">({batch.completed} done)</span>}
+                    {batch.failed > 0 && <span className="text-red-400 ml-1">({batch.failed} failed)</span>}
+                  </span>
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       batch.status === 'completed'
                         ? 'bg-emerald-500/20 text-emerald-300'
                         : batch.status === 'running'
                         ? 'bg-indigo-500/20 text-indigo-300'
-                        : 'bg-amber-500/20 text-amber-300'
+                        : batch.status === 'halted'
+                        ? 'bg-red-500/20 text-red-300'
+                        : batch.status === 'partial_failure'
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : 'bg-gray-500/20 text-gray-300'
                     }`}
                   >
                     {batch.status}

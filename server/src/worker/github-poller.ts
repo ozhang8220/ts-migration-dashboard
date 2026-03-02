@@ -1,114 +1,65 @@
-import { getDb } from '../database';
+import { getDb, logError } from '../database';
+import { githubFetch } from '../github/api';
+import { checkBatchProgression, updateFileStatus, getRepoConfig, shouldHaltBatch } from './batch-progression';
 
-const POLL_INTERVAL_MS = 30_000; // 30 seconds
-
-const GITHUB_OWNER = process.env.GITHUB_OWNER || 'ozhang8220';
-const GITHUB_REPO = process.env.GITHUB_REPO || 'shopdirect-frontend';
+const POLL_INTERVAL_MS = 120_000; // 2 minutes (reduced — webhooks are primary)
 
 interface FileRow {
   id: string;
   path: string;
   status: string;
   pr_number: number;
-}
-
-function getGitHubToken(): string | null {
-  return process.env.GITHUB_TOKEN || null;
-}
-
-function logActivity(fileId: string, filePath: string, oldStatus: string, newStatus: string, message: string): void {
-  const db = getDb();
-  db.prepare(
-    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
-  ).run(fileId, filePath, oldStatus, newStatus, message);
+  batch_id: string | null;
 }
 
 async function pollGitHubPRs(): Promise<void> {
-  const token = getGitHubToken();
-  if (!token) {
-    return;
-  }
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
 
   const db = getDb();
+  const config = getRepoConfig();
+  const owner = config?.owner || process.env.GITHUB_OWNER || 'ozhang8220';
+  const repo = config?.repo || process.env.GITHUB_REPO || 'shopdirect-frontend';
+
   const openPRFiles = db.prepare(
     "SELECT * FROM files WHERE status = 'pr_open' AND pr_number IS NOT NULL"
   ).all() as FileRow[];
 
-  if (openPRFiles.length === 0) {
-    return;
-  }
+  if (openPRFiles.length === 0) return;
 
-  console.log(`[github-poller] Checking ${openPRFiles.length} open PR(s)...`);
+  console.log(`[github-poller] Checking ${openPRFiles.length} open PR(s) on ${owner}/${repo}...`);
 
   for (const file of openPRFiles) {
     try {
-      const response = await fetch(
-        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${file.pr_number}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'ts-migration-dashboard',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        console.error(`[github-poller] GitHub API error for PR #${file.pr_number}: ${response.status}`);
-        continue;
-      }
-
-      const pr = await response.json() as { merged: boolean; state: string; merged_at: string | null };
+      const response = await githubFetch(`/repos/${owner}/${repo}/pulls/${file.pr_number}`);
+      const pr = await response.json() as { merged: boolean; state: string };
 
       if (pr.merged) {
         console.log(`[github-poller] PR #${file.pr_number} merged for ${file.path}`);
-        db.prepare(
-          "UPDATE files SET status = 'merged', updated_at = datetime('now') WHERE id = ?"
-        ).run(file.id);
-        logActivity(file.id, file.path, 'pr_open', 'merged', `${file.path} → Merged ✅`);
+        updateFileStatus(file.id, 'merged');
 
-        // Update batch progress
-        const batchId = (db.prepare('SELECT batch_id FROM files WHERE id = ?').get(file.id) as { batch_id: string | null })?.batch_id;
-        if (batchId) {
-          db.prepare("UPDATE batches SET completed = completed + 1 WHERE id = ?").run(batchId);
-          checkBatchCompletion(batchId);
+        if (file.batch_id) {
+          db.prepare("UPDATE batches SET completed = completed + 1 WHERE id = ?").run(file.batch_id);
         }
+
+        await checkBatchProgression();
+
       } else if (pr.state === 'closed') {
         console.log(`[github-poller] PR #${file.pr_number} closed without merge for ${file.path}`);
-        db.prepare(
-          "UPDATE files SET status = 'needs_human', error_reason = 'PR closed without merge', updated_at = datetime('now') WHERE id = ?"
-        ).run(file.id);
-        logActivity(file.id, file.path, 'pr_open', 'needs_human', `${file.path} → Needs Human (PR Closed) ⚠️`);
+        updateFileStatus(file.id, 'needs_human', 'PR closed without merge');
 
-        // Track as failure so batch can finalize
-        const closedBatchId = (db.prepare('SELECT batch_id FROM files WHERE id = ?').get(file.id) as { batch_id: string | null })?.batch_id;
-        if (closedBatchId) {
-          db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(closedBatchId);
-          checkBatchCompletion(closedBatchId);
+        if (file.batch_id) {
+          db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(file.batch_id);
+          shouldHaltBatch(file.batch_id);
         }
+
+        await checkBatchProgression();
       }
-      // If still open, do nothing — will check again next poll
     } catch (err) {
-      console.error(`[github-poller] Error checking PR #${file.pr_number}:`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[github-poller] Error checking PR #${file.pr_number}:`, msg);
+      logError('github_poller', `Error checking PR #${file.pr_number}`, msg);
     }
-  }
-}
-
-function checkBatchCompletion(batchId: string): void {
-  const db = getDb();
-  const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId) as {
-    id: string;
-    total_files: number;
-    completed: number;
-    failed: number;
-  } | undefined;
-
-  if (batch && (batch.completed + batch.failed >= batch.total_files)) {
-    const newStatus = batch.failed > 0 ? 'partial_failure' : 'completed';
-    db.prepare(
-      "UPDATE batches SET status = ?, completed_at = datetime('now') WHERE id = ?"
-    ).run(newStatus, batchId);
-    console.log(`[github-poller] Batch ${batchId} finished with status: ${newStatus}`);
   }
 }
 
@@ -120,10 +71,11 @@ export function startGitHubPoller(): void {
     return;
   }
 
-  console.log(`[github-poller] Starting poller (every ${POLL_INTERVAL_MS / 1000}s)`);
+  console.log(`[github-poller] Starting poller (every ${POLL_INTERVAL_MS / 1000}s — fallback, webhooks are primary)`);
   pollerInterval = setInterval(() => {
     pollGitHubPRs().catch((err) => {
       console.error('[github-poller] Unhandled error in poller:', err);
+      logError('github_poller', 'Unhandled poller error', err instanceof Error ? err.message : String(err));
     });
   }, POLL_INTERVAL_MS);
 

@@ -1,3 +1,5 @@
+import { logError } from '../database';
+
 const DEVIN_API_BASE_URL = process.env.DEVIN_API_BASE_URL || 'https://api.devin.ai/v1';
 
 function getToken(): string {
@@ -42,6 +44,37 @@ export async function createSession(prompt: string): Promise<CreateSessionRespon
 
   const data = await response.json() as CreateSessionResponse;
   return data;
+}
+
+/**
+ * Create a Devin session with exponential backoff retry.
+ * Retries up to maxRetries times with delays of 2s, 4s, 8s.
+ */
+export async function createSessionWithRetry(
+  prompt: string,
+  maxRetries: number = 3
+): Promise<CreateSessionResponse> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await createSession(prompt);
+      return response;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+
+      if (attempt === maxRetries) {
+        logError('devin_api', `createSession failed after ${maxRetries} attempts`, errorMsg);
+        throw err;
+      }
+
+      const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+      console.error(`[devin-client] Attempt ${attempt} failed, retrying in ${delay}ms: ${errorMsg}`);
+      logError('devin_api', `createSession attempt ${attempt} failed, retrying`, errorMsg);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+
+  // Unreachable but TypeScript needs it
+  throw new Error('createSessionWithRetry: unreachable');
 }
 
 export async function getSession(sessionId: string): Promise<GetSessionResponse> {

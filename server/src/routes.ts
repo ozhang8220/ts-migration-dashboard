@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import { getDb } from './database';
-import { createSession, isDevinConfigured } from './devin/client';
-import { buildMigrationPrompt } from './devin/prompt-builder';
+import { getDb, logError } from './database';
+import { isDevinConfigured } from './devin/client';
+import { analyzeRepo, saveAnalysisToDb } from './github/analyzer';
+import { getRateLimitInfo, isGitHubConfigured } from './github/api';
+import { startNextBatch, getRepoConfig } from './worker/batch-progression';
 
 const router = Router();
 
@@ -27,11 +28,25 @@ router.get('/stats', (_req: Request, res: Response) => {
   const mergedCount = byStatus['merged'] || 0;
   const progressPercent = totalFiles > 0 ? Math.round((mergedCount / totalFiles) * 1000) / 10 : 0;
 
+  // Session duration stats
+  const durationRow = db.prepare(
+    "SELECT SUM(duration_seconds) as total, COUNT(*) as count FROM devin_sessions WHERE duration_seconds IS NOT NULL"
+  ).get() as { total: number | null; count: number };
+
+  const rateLimit = getRateLimitInfo();
+  const config = getRepoConfig();
+
   res.json({
     totalFiles,
     byStatus,
     byComplexity,
     progressPercent,
+    totalSessionDurationSeconds: durationRow.total || 0,
+    sessionCount: durationRow.count,
+    rateLimit,
+    repoConfig: config,
+    devinConfigured: isDevinConfigured(),
+    githubConfigured: isGitHubConfigured(),
   });
 });
 
@@ -40,19 +55,19 @@ router.get('/files', (req: Request, res: Response) => {
   const db = getDb();
   const { status, sort } = req.query;
 
-  let query = 'SELECT * FROM files';
+  let query = 'SELECT f.*, ds.duration_seconds as session_duration FROM files f LEFT JOIN devin_sessions ds ON ds.file_id = f.id AND ds.duration_seconds IS NOT NULL';
   const params: string[] = [];
 
   if (status && typeof status === 'string') {
-    query += ' WHERE status = ?';
+    query += ' WHERE f.status = ?';
     params.push(status);
   }
 
   const allowedSorts = ['dep_depth', 'loc', 'complexity', 'status', 'path', 'imported_by', 'import_count'];
   if (sort && typeof sort === 'string' && allowedSorts.includes(sort)) {
-    query += ` ORDER BY ${sort} ASC`;
+    query += ` ORDER BY f.${sort} ASC`;
   } else {
-    query += ' ORDER BY dep_depth ASC, path ASC';
+    query += ' ORDER BY f.dep_depth ASC, f.path ASC';
   }
 
   const files = db.prepare(query).all(...params);
@@ -96,7 +111,6 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
   const oldStatus = file.status;
   db.prepare("UPDATE files SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, fileId);
 
-  // Log activity
   db.prepare("INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))").run(
     fileId,
     file.path,
@@ -118,118 +132,54 @@ router.get('/batches', (_req: Request, res: Response) => {
 
 // POST /api/batches
 router.post('/batches', async (req: Request, res: Response) => {
+  try {
+    const batchSize = req.body.batchSize || 5;
+
+    if (!isDevinConfigured()) {
+      // Still allow batch creation without Devin (files go to queued state)
+    }
+
+    const result = await startNextBatch(batchSize);
+    const db = getDb();
+    const files = db.prepare('SELECT * FROM files WHERE batch_id = ?').all(result.batchId);
+
+    res.json({
+      batchId: result.batchId,
+      filesQueued: result.filesQueued,
+      devinEnabled: result.devinEnabled,
+      files,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to create batch';
+    logError('batch_create', msg);
+    res.status(400).json({ error: msg });
+  }
+});
+
+// POST /api/batches/:id/resume — resume a halted batch
+router.post('/batches/:id/resume', (_req: Request, res: Response) => {
   const db = getDb();
-  const batchSize = req.body.batchSize || 5;
-  const devinEnabled = isDevinConfigured();
+  const batchId = _req.params.id;
 
-  // Pick next N pending files ordered by dep_depth ASC, complexity ASC, loc ASC
-  const pendingFiles = db.prepare(
-    `SELECT * FROM files WHERE status = 'pending' 
-     ORDER BY dep_depth ASC, 
-     CASE complexity WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END ASC,
-     loc ASC
-     LIMIT ?`
-  ).all(batchSize) as { id: string; path: string; loc: number; complexity: string; imported_by: number; dep_depth: number }[];
-
-  if (pendingFiles.length === 0) {
-    res.status(400).json({ error: 'No pending files available' });
+  const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId) as { id: string; status: string } | undefined;
+  if (!batch) {
+    res.status(404).json({ error: 'Batch not found' });
     return;
   }
 
-  const batchId = `batch-${uuidv4().slice(0, 8)}`;
-
-  // Create batch and update file statuses in a transaction
-  const insertBatch = db.prepare(
-    "INSERT INTO batches (id, status, total_files, started_at) VALUES (?, 'running', ?, datetime('now'))"
-  );
-  const updateFileQueued = db.prepare(
-    "UPDATE files SET status = 'queued', batch_id = ?, updated_at = datetime('now') WHERE id = ?"
-  );
-  const insertActivity = db.prepare(
-    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
-  );
-
-  const transaction = db.transaction(() => {
-    insertBatch.run(batchId, pendingFiles.length);
-    for (const file of pendingFiles) {
-      updateFileQueued.run(batchId, file.id);
-      insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} → Queued (Batch ${batchId})`);
-    }
-  });
-
-  transaction();
-
-  // If Devin API is configured, create sessions for each file
-  if (devinEnabled) {
-    const repoFullName = `${process.env.GITHUB_OWNER || 'ozhang8220'}/${process.env.GITHUB_REPO || 'shopdirect-frontend'}`;
-    const baseBranch = process.env.GITHUB_BASE_BRANCH || 'main';
-
-    // Get already-merged files for context
-    const mergedFiles = db.prepare(
-      "SELECT path FROM files WHERE status = 'merged'"
-    ).all() as { path: string }[];
-    const alreadyConverted = mergedFiles.map(f =>
-      f.path.endsWith('.jsx')
-        ? f.path.replace(/\.jsx$/, '.tsx')
-        : f.path.replace(/\.js$/, '.ts')
-    );
-
-    for (const file of pendingFiles) {
-      try {
-        const prompt = buildMigrationPrompt(
-          {
-            path: file.path,
-            loc: file.loc,
-            complexity: file.complexity,
-            importedBy: file.imported_by,
-            depDepth: file.dep_depth,
-          },
-          { repoFullName, baseBranch, alreadyConverted }
-        );
-
-        const session = await createSession(prompt);
-
-        // Store Devin session record
-        const sessionId = `sess-${uuidv4().slice(0, 8)}`;
-        db.prepare(
-          "INSERT INTO devin_sessions (id, devin_session_id, file_id, batch_id, status, devin_url, started_at) VALUES (?, ?, ?, ?, 'running', ?, datetime('now'))"
-        ).run(sessionId, session.session_id, file.id, batchId, session.url);
-
-        // Update file status to in_progress
-        db.prepare(
-          "UPDATE files SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?"
-        ).run(file.id);
-
-        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} → In Progress (Devin Session Started)`);
-
-        console.log(`[batch] Created Devin session for ${file.path}: ${session.session_id}`);
-      } catch (err) {
-        console.error(`[batch] Failed to create Devin session for ${file.path}:`, err);
-
-        // Mark file as failed if session creation fails
-        const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
-        db.prepare(
-          "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
-        ).run(errorMsg, file.id);
-
-        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} → Failed (${errorMsg})`);
-
-        // Track this failure in the batch so it can properly finalize
-        db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
-      }
-    }
-  } else {
-    console.log(`[batch] Devin API not configured — batch ${batchId} created with ${pendingFiles.length} files in queued state only`);
+  if (batch.status !== 'halted') {
+    res.status(400).json({ error: 'Batch is not halted' });
+    return;
   }
 
-  const files = db.prepare('SELECT * FROM files WHERE batch_id = ?').all(batchId);
+  // Resume by setting status back to running so auto-progression can continue
+  db.prepare("UPDATE batches SET status = 'running' WHERE id = ?").run(batchId);
 
-  res.json({
-    batchId,
-    filesQueued: pendingFiles.length,
-    devinEnabled,
-    files,
-  });
+  db.prepare(
+    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (NULL, NULL, 'halted', 'running', ?, datetime('now'))"
+  ).run(`Batch ${batchId} resumed by user`);
+
+  res.json({ ok: true, batchId, status: 'running' });
 });
 
 // GET /api/activity
@@ -237,6 +187,84 @@ router.get('/activity', (_req: Request, res: Response) => {
   const db = getDb();
   const activity = db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 20').all();
   res.json(activity);
+});
+
+// POST /api/analyze
+router.post('/analyze', async (req: Request, res: Response) => {
+  try {
+    const { repoFullName, branch } = req.body;
+    if (!repoFullName || typeof repoFullName !== 'string') {
+      res.status(400).json({ error: 'repoFullName is required (format: owner/repo)' });
+      return;
+    }
+
+    if (!isGitHubConfigured()) {
+      res.status(400).json({ error: 'GITHUB_TOKEN not configured — cannot analyze repos' });
+      return;
+    }
+
+    const parts = repoFullName.split('/');
+    if (parts.length !== 2) {
+      res.status(400).json({ error: 'repoFullName must be in format: owner/repo' });
+      return;
+    }
+
+    const [owner, repo] = parts;
+    const targetBranch = branch || 'main';
+
+    console.log(`[analyze] Starting analysis of ${owner}/${repo}@${targetBranch}`);
+
+    const result = await analyzeRepo(owner, repo, targetBranch);
+
+    if (result.totalFiles === 0) {
+      res.json({ ...result, message: 'No .js/.jsx files found under src/' });
+      return;
+    }
+
+    // Save to database
+    saveAnalysisToDb(owner, repo, targetBranch, result.files);
+
+    res.json(result);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Analysis failed';
+    console.error('[analyze] Error:', msg);
+    logError('analyze', msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// GET /api/config
+router.get('/config', (_req: Request, res: Response) => {
+  const config = getRepoConfig();
+  res.json(config || { owner: null, repo: null, branch: 'main', autoProgress: false });
+});
+
+// PATCH /api/config
+router.patch('/config', (req: Request, res: Response) => {
+  const db = getDb();
+  const { autoProgress } = req.body;
+
+  if (autoProgress !== undefined) {
+    const config = getRepoConfig();
+    if (config) {
+      db.prepare("UPDATE repo_config SET auto_progress = ? WHERE id = 1").run(autoProgress ? 1 : 0);
+    } else {
+      // Create a default config entry
+      db.prepare(
+        "INSERT OR REPLACE INTO repo_config (id, owner, repo, branch, auto_progress) VALUES (1, '', '', 'main', ?)"
+      ).run(autoProgress ? 1 : 0);
+    }
+  }
+
+  const updatedConfig = getRepoConfig();
+  res.json(updatedConfig || { autoProgress: false });
+});
+
+// GET /api/errors
+router.get('/errors', (_req: Request, res: Response) => {
+  const db = getDb();
+  const errors = db.prepare('SELECT * FROM error_log ORDER BY created_at DESC LIMIT 50').all();
+  res.json(errors);
 });
 
 function capitalize(s: string): string {
