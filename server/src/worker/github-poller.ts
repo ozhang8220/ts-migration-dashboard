@@ -71,6 +71,7 @@ async function pollGitHubPRs(): Promise<void> {
         const batchId = (db.prepare('SELECT batch_id FROM files WHERE id = ?').get(file.id) as { batch_id: string | null })?.batch_id;
         if (batchId) {
           db.prepare("UPDATE batches SET completed = completed + 1 WHERE id = ?").run(batchId);
+          checkBatchCompletion(batchId);
         }
       } else if (pr.state === 'closed') {
         console.log(`[github-poller] PR #${file.pr_number} closed without merge for ${file.path}`);
@@ -83,6 +84,24 @@ async function pollGitHubPRs(): Promise<void> {
     } catch (err) {
       console.error(`[github-poller] Error checking PR #${file.pr_number}:`, err);
     }
+  }
+}
+
+function checkBatchCompletion(batchId: string): void {
+  const db = getDb();
+  const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId) as {
+    id: string;
+    total_files: number;
+    completed: number;
+    failed: number;
+  } | undefined;
+
+  if (batch && (batch.completed + batch.failed >= batch.total_files)) {
+    const newStatus = batch.failed > 0 ? 'partial_failure' : 'completed';
+    db.prepare(
+      "UPDATE batches SET status = ?, completed_at = datetime('now') WHERE id = ?"
+    ).run(newStatus, batchId);
+    console.log(`[github-poller] Batch ${batchId} finished with status: ${newStatus}`);
   }
 }
 

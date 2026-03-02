@@ -213,6 +213,9 @@ router.post('/batches', async (req: Request, res: Response) => {
         ).run(errorMsg, file.id);
 
         insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} → Failed (${errorMsg})`);
+
+        // Track this failure in the batch so it can properly finalize
+        db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
       }
     }
   } else {
