@@ -23,11 +23,10 @@ interface Props {
   repoConfig: RepoConfig | null;
   onAnalyze: (repoFullName: string, branch: string) => Promise<AnalysisResult>;
   showModal: boolean;
-  onOpenModal: () => void;
   onCloseModal: () => void;
 }
 
-export default function RepoSelector({ repoConfig, onAnalyze, showModal, onOpenModal, onCloseModal }: Props) {
+export default function RepoSelector({ repoConfig, onAnalyze, showModal, onCloseModal }: Props) {
   const [repoFullName, setRepoFullName] = useState('');
   const [branch, setBranch] = useState('main');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -69,31 +68,10 @@ export default function RepoSelector({ repoConfig, onAnalyze, showModal, onOpenM
     }
   };
 
+  if (!showModal) return null;
+
   return (
     <>
-      {/* Repo pill badge */}
-      {currentRepo ? (
-        <button
-          onClick={onOpenModal}
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F3F4F6] border border-[#E5E7EB] hover:border-[#D1D5DB] hover:bg-[#E5E7EB] transition-colors cursor-pointer"
-          title="Change repository"
-        >
-          <span className="text-[13px] text-[#111827]">{currentRepo}</span>
-          <span className="text-[#D1D5DB]">{"\u00B7"}</span>
-          <span className="text-[13px] text-[#6B7280]">{currentBranch}</span>
-          <span className="text-[#9CA3AF] text-[11px] ml-0.5">{"\u270E"}</span>
-        </button>
-      ) : (
-        <button
-          onClick={onOpenModal}
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F3F4F6] border border-[#E5E7EB] hover:border-[#D1D5DB] hover:bg-[#E5E7EB] transition-colors cursor-pointer text-[13px] text-[#6B7280]"
-        >
-          Connect Repo
-        </button>
-      )}
-
-      {/* Modal */}
-      {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="fixed inset-0 bg-black/20 backdrop-blur-[2px]" onClick={closeModal} />
           <div className="relative bg-white rounded-lg border border-[#E5E7EB] shadow-xl p-6 w-full max-w-[480px] mx-4">
@@ -177,7 +155,6 @@ export default function RepoSelector({ repoConfig, onAnalyze, showModal, onOpenM
             </form>
           </div>
         </div>
-      )}
     </>
   );
 }

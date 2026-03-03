@@ -37,6 +37,7 @@ export default function App() {
   } = useDashboardData();
 
   const [showRepoModal, setShowRepoModal] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   if (loading) {
     return (
@@ -75,23 +76,16 @@ export default function App() {
         repoConfig={repoConfig ?? null}
         onSelectRepo={analyzeRepo}
         onAddRepo={() => setShowRepoModal(true)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
       {/* Main content area */}
-      <div className="ml-[250px]">
+      <div className={`transition-[margin-left] duration-200 ease-in-out ${sidebarCollapsed ? 'ml-12' : 'ml-[250px]'}`}>
         {/* Header */}
         <header className="border-b border-[#E5E7EB] bg-white sticky top-0 z-10">
           <div className="px-8 py-3.5 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h1 className="text-[15px] font-bold text-[#111827]">TypeScript Migration</h1>
-              <RepoSelector
-                repoConfig={repoConfig ?? null}
-                onAnalyze={analyzeRepo}
-                showModal={showRepoModal}
-                onOpenModal={() => setShowRepoModal(true)}
-                onCloseModal={() => setShowRepoModal(false)}
-              />
-            </div>
+            <h1 className="text-[15px] font-bold text-[#111827]">TypeScript Migration</h1>
             <div className="flex items-center gap-2 text-[13px] text-[#6B7280]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>Last updated: {formatTimestamp(lastUpdated)}</span>
@@ -136,6 +130,14 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Repo modal (rendered outside layout flow) */}
+      <RepoSelector
+        repoConfig={repoConfig ?? null}
+        onAnalyze={analyzeRepo}
+        showModal={showRepoModal}
+        onCloseModal={() => setShowRepoModal(false)}
+      />
     </div>
   );
 }

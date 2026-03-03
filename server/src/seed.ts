@@ -58,7 +58,8 @@ db.exec(`
     pr_number INTEGER,
     started_at TEXT,
     completed_at TEXT,
-    error_message TEXT
+    error_message TEXT,
+    duration_seconds INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS activity_log (
@@ -68,6 +69,23 @@ db.exec(`
     old_status TEXT,
     new_status TEXT,
     message TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS repo_config (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    owner TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    branch TEXT NOT NULL DEFAULT 'main',
+    auto_progress INTEGER NOT NULL DEFAULT 0,
+    analyzed_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS error_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
@@ -117,6 +135,11 @@ const insertSession = db.prepare(`
 const insertActivity = db.prepare(`
   INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at)
   VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+const insertRepoConfig = db.prepare(`
+  INSERT OR REPLACE INTO repo_config (id, owner, repo, branch, auto_progress, analyzed_at)
+  VALUES (1, ?, ?, ?, ?, datetime('now'))
 `);
 
 const transaction = db.transaction(() => {
@@ -182,6 +205,9 @@ const transaction = db.transaction(() => {
     const ts = new Date(now + a.offset * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
     insertActivity.run(a.fileId, a.path, a.from, a.to, a.msg, ts);
   }
+
+  // Seed repo config so the header repo pill/sidebar show the active repo
+  insertRepoConfig.run('ozhang8220', 'shopdirect-frontend', 'main', 0);
 });
 
 transaction();

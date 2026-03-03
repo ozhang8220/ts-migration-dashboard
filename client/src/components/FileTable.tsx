@@ -145,7 +145,7 @@ export default function FileTable({ files }: Props) {
               const complexityCfg = complexityConfig[file.complexity] || complexityConfig.low;
 
               return (
-                <tr key={file.id} className="hover:bg-[#F9FAFB] transition-colors">
+                <tr key={file.id} className="hover:bg-[#F3F4F6] transition-colors">
                   <td className="px-4 py-3">
                     <span className="text-sm font-mono text-[#111827]">{getDisplayPath(file.path, file.status)}</span>
                   </td>
