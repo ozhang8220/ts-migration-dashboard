@@ -20,7 +20,7 @@ const batchStatusConfig: Record<string, string> = {
 const fileStatusLabels: Record<string, string> = {
   pending: 'Queued',
   queued: 'Queued',
-  in_progress: 'Devin Working',
+  in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
   needs_human: 'Feedback Needed',

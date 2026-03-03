@@ -9,7 +9,7 @@ interface Props {
 const statusConfig: Record<FileStatus, { label: string; classes: string }> = {
   pending: { label: 'Queued', classes: 'bg-gray-100 text-gray-600' },
   queued: { label: 'Queued', classes: 'bg-blue-50 text-blue-600' },
-  in_progress: { label: 'Devin Working', classes: 'bg-blue-50 text-blue-700' },
+  in_progress: { label: 'In Progress', classes: 'bg-blue-50 text-blue-700' },
   pr_open: { label: 'Ready for Review', classes: 'bg-amber-50 text-amber-700' },
   merged: { label: 'Completed', classes: 'bg-green-50 text-green-700' },
   needs_human: { label: 'Feedback Needed', classes: 'bg-orange-100 text-orange-700' },

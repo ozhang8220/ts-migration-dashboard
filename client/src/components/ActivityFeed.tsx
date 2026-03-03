@@ -27,7 +27,7 @@ const statusEmojis: Record<string, string> = {
 const statusLabels: Record<string, string> = {
   pending: 'Queued',
   queued: 'Queued',
-  in_progress: 'Devin Working',
+  in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
   needs_human: 'Feedback Needed',

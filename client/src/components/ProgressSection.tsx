@@ -9,9 +9,9 @@ interface Props {
 const statusCards = [
   { key: 'merged', label: 'Completed', icon: '\u2705', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', count: 'text-green-600' },
   { key: 'pr_open', label: 'Ready for Review', icon: '\uD83D\uDC40', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', count: 'text-amber-600' },
-  { key: 'in_progress', label: 'Devin Working', icon: '\uD83D\uDD04', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', count: 'text-blue-600' },
-  { key: 'pending', label: 'Queued', icon: '\u23F3', bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-500', count: 'text-gray-600' },
   { key: 'needs_human', label: 'Feedback Needed', icon: '\uD83D\uDCAC', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', count: 'text-orange-600' },
+  { key: 'in_progress', label: 'In Progress', icon: '\uD83D\uDD04', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', count: 'text-blue-600' },
+  { key: 'pending', label: 'Queued', icon: '\u23F3', bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-500', count: 'text-gray-600' },
 ];
 
 function formatDuration(totalSeconds: number): string {

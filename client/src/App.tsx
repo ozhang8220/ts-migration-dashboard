@@ -62,12 +62,6 @@ export default function App() {
 
   const showAnalyzeForm = stats && stats.totalFiles === 0;
   const repoConfig = stats?.repoConfig;
-  const repoName = repoConfig?.owner && repoConfig?.repo
-    ? repoConfig.owner + '/' + repoConfig.repo
-    : null;
-  const repoSubtitle = repoName
-    ? `${repoName} \u00B7 ${repoConfig?.branch || 'main'}`
-    : null;
   const autoProgress = repoConfig?.autoProgress ?? false;
 
   return (
@@ -77,12 +71,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <RepoSelector repoConfig={repoConfig ?? null} onAnalyze={analyzeRepo} />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">TypeScript Migration</h1>
-              {repoSubtitle && (
-                <p className="text-xs text-gray-400">{repoSubtitle}</p>
-              )}
-            </div>
+            <h1 className="text-xl font-bold text-gray-900">TypeScript Migration</h1>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-500">
             {stats && (
