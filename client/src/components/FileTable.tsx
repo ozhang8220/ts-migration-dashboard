@@ -1,28 +1,18 @@
 import { useState, useMemo } from 'react';
 import type { MigrationFile, FileStatus } from '../types';
 
-function formatDuration(totalSeconds: number): string {
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes < 60) return `${minutes}m ${seconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remainMinutes = minutes % 60;
-  return `${hours}h ${remainMinutes}m`;
-}
-
 interface Props {
   files: MigrationFile[];
   onStatusChange: (fileId: string, status: string) => void;
 }
 
 const statusConfig: Record<FileStatus, { label: string; classes: string }> = {
-  pending: { label: 'Pending', classes: 'bg-gray-100 text-gray-600' },
+  pending: { label: 'Queued', classes: 'bg-gray-100 text-gray-600' },
   queued: { label: 'Queued', classes: 'bg-blue-50 text-blue-600' },
-  in_progress: { label: 'In Progress', classes: 'bg-blue-50 text-blue-700' },
-  pr_open: { label: 'PR Open', classes: 'bg-amber-50 text-amber-700' },
-  merged: { label: 'Merged', classes: 'bg-green-50 text-green-700' },
-  needs_human: { label: 'Needs Human', classes: 'bg-orange-100 text-orange-700' },
+  in_progress: { label: 'Devin Working', classes: 'bg-blue-50 text-blue-700' },
+  pr_open: { label: 'Ready for Review', classes: 'bg-amber-50 text-amber-700' },
+  merged: { label: 'Completed', classes: 'bg-green-50 text-green-700' },
+  needs_human: { label: 'Feedback Needed', classes: 'bg-orange-100 text-orange-700' },
   failed: { label: 'Failed', classes: 'bg-red-50 text-red-700' },
   skipped: { label: 'Skipped', classes: 'bg-gray-100 text-gray-500' },
 };
@@ -42,6 +32,11 @@ function getDisplayPath(path: string, status: FileStatus): string {
     return path.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
   }
   return path;
+}
+
+function getPriorityLabel(depth: number): string {
+  if (depth === 0) return 'P0 (leaf)';
+  return `P${depth}`;
 }
 
 export default function FileTable({ files, onStatusChange }: Props) {
@@ -97,15 +92,15 @@ export default function FileTable({ files, onStatusChange }: Props) {
     });
   }, [files, sortField, sortAsc, filterStatus]);
 
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
+  const SortHeader = ({ field, children, className: extraClass }: { field: SortField; children: React.ReactNode; className?: string }) => (
     <th
-      className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-900 select-none"
+      className={`px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-900 select-none ${extraClass || ''}`}
       onClick={() => handleSort(field)}
     >
       <div className="flex items-center gap-1">
         {children}
         {sortField === field && (
-          <span className="text-blue-500">{sortAsc ? '↑' : '↓'}</span>
+          <span className="text-blue-500">{sortAsc ? '\u2191' : '\u2193'}</span>
         )}
       </div>
     </th>
@@ -137,13 +132,12 @@ export default function FileTable({ files, onStatusChange }: Props) {
             <tr>
               <SortHeader field="path">File Path</SortHeader>
               <SortHeader field="complexity">Complexity</SortHeader>
-              <SortHeader field="dep_depth">Depth</SortHeader>
-              <SortHeader field="loc">LOC</SortHeader>
-              <SortHeader field="status">Status</SortHeader>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Duration</th>
+              <SortHeader field="dep_depth">Priority</SortHeader>
+              <SortHeader field="loc">Lines</SortHeader>
+              <SortHeader field="status" className="min-w-[160px]">Status</SortHeader>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PR Link</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Devin Session</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-12"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -167,15 +161,12 @@ export default function FileTable({ files, onStatusChange }: Props) {
                       <span className="text-sm text-gray-600">{complexityCfg.label}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{file.dep_depth}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{getPriorityLabel(file.dep_depth)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{file.loc}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusCfg.classes}`}>
+                  <td className="px-4 py-3 min-w-[160px]">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusCfg.classes}`}>
                       {statusCfg.label}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {file.session_duration != null ? formatDuration(file.session_duration) : '\u2014'}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     {file.pr_url ? (
@@ -188,7 +179,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
                         #{file.pr_number}
                       </a>
                     ) : (
-                      <span className="text-gray-300">{'\u2014'}</span>
+                      <span className="text-gray-300">\u2014</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
@@ -202,25 +193,28 @@ export default function FileTable({ files, onStatusChange }: Props) {
                         View
                       </a>
                     ) : (
-                      <span className="text-gray-300">{'\u2014'}</span>
+                      <span className="text-gray-300">\u2014</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
                     {(file.status === 'pending' || file.status === 'needs_human' || file.status === 'failed') && (
-                      <select
-                        className="bg-white border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500/30"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            onStatusChange(file.id, e.target.value);
-                            e.target.value = '';
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Change…</option>
-                        <option value="skipped">Skip</option>
-                        <option value="pending">Reset to Pending</option>
-                      </select>
+                      <div className="relative">
+                        <select
+                          className="appearance-none bg-transparent border border-gray-200 rounded px-2 py-1 text-xs text-gray-400 hover:text-gray-600 hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500/30 cursor-pointer w-8 text-center"
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              onStatusChange(file.id, e.target.value);
+                              e.target.value = '';
+                            }
+                          }}
+                          title="Change status"
+                        >
+                          <option value="" disabled>\u22EF</option>
+                          <option value="skipped">Skip</option>
+                          <option value="pending">Reset to Queued</option>
+                        </select>
+                      </div>
                     )}
                   </td>
                 </tr>

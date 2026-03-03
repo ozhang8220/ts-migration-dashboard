@@ -15,36 +15,43 @@ function formatTime(dateStr: string): string {
 
 const statusEmojis: Record<string, string> = {
   pending: '\u23F3',
-  queued: '\uD83D\uDCCB',
+  queued: '\u23F3',
   in_progress: '\uD83D\uDD04',
-  pr_open: '\uD83D\uDD17',
+  pr_open: '\uD83D\uDC40',
   merged: '\u2705',
-  needs_human: '\u26A0\uFE0F',
+  needs_human: '\uD83D\uDCAC',
   failed: '\u274C',
   skipped: '\u23ED\uFE0F',
 };
 
 const statusLabels: Record<string, string> = {
-  pending: 'Pending',
+  pending: 'Queued',
   queued: 'Queued',
-  in_progress: 'In Progress',
-  pr_open: 'PR Open',
-  merged: 'Merged',
-  needs_human: 'Needs Attention',
+  in_progress: 'Devin Working',
+  pr_open: 'Ready for Review',
+  merged: 'Completed',
+  needs_human: 'Feedback Needed',
   failed: 'Failed',
   skipped: 'Skipped',
 };
 
+function getDisplayFilename(path: string, status: string): string {
+  const filename = path.split('/').pop() || path;
+  if (status === 'merged') {
+    return filename.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
+  }
+  return filename;
+}
+
 export default function ActivityFeed({ activity }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 flex flex-col h-full">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Activity Feed</h2>
-      <div className="space-y-0.5 max-h-80 overflow-y-auto pr-2">
+      <div className="space-y-0.5 flex-1 overflow-y-auto pr-2">
         {activity.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-8">No activity yet</p>
         ) : (
           activity.map((entry) => {
-            const filename = entry.file_path ? entry.file_path.split('/').pop() : null;
             const emoji = statusEmojis[entry.new_status] || '';
             const label = statusLabels[entry.new_status] || entry.new_status;
 
@@ -56,11 +63,11 @@ export default function ActivityFeed({ activity }: Props) {
                 <span className="text-xs text-gray-400 whitespace-nowrap min-w-[70px]">
                   {formatTime(entry.created_at)}
                 </span>
-                <span className="text-gray-300">{'\u2014'}</span>
-                {filename ? (
+                <span className="text-gray-300">\u2014</span>
+                {entry.file_path ? (
                   <>
-                    <span className="font-mono text-gray-700">{filename}</span>
-                    <span className="text-gray-300">{'\u2192'}</span>
+                    <span className="font-mono text-gray-700">{getDisplayFilename(entry.file_path, entry.new_status)}</span>
+                    <span className="text-gray-300">\u2192</span>
                     <span className="text-gray-600">{label}</span>
                     <span>{emoji}</span>
                   </>

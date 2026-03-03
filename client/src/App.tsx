@@ -42,7 +42,7 @@ export default function App() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-lg text-gray-500">Loading dashboard…</span>
+          <span className="text-lg text-gray-500">Loading dashboard\u2026</span>
         </div>
       </div>
     );
@@ -65,9 +65,9 @@ export default function App() {
   const repoName = repoConfig?.owner && repoConfig?.repo
     ? repoConfig.owner + '/' + repoConfig.repo
     : null;
-  const headerTitle = repoName
-    ? `TypeScript Migration \u2014 ${repoName}`
-    : 'TypeScript Migration';
+  const repoSubtitle = repoName
+    ? `${repoName} \u00B7 ${repoConfig?.branch || 'main'}`
+    : null;
   const autoProgress = repoConfig?.autoProgress ?? false;
 
   return (
@@ -76,12 +76,12 @@ export default function App() {
       <header className="border-b border-gray-200 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
-              TS
-            </div>
+            <RepoSelector repoConfig={repoConfig ?? null} onAnalyze={analyzeRepo} />
             <div>
-              <h1 className="text-xl font-bold text-gray-900">{headerTitle}</h1>
-              <p className="text-xs text-gray-400">Automated JS \u2192 TS migration tracking</p>
+              <h1 className="text-xl font-bold text-gray-900">TypeScript Migration</h1>
+              {repoSubtitle && (
+                <p className="text-xs text-gray-400">{repoSubtitle}</p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -111,17 +111,13 @@ export default function App() {
           </div>
         )}
 
-        {repoConfig && (
-          <RepoSelector repoConfig={repoConfig} onAnalyze={analyzeRepo} />
-        )}
-
         {showAnalyzeForm ? (
           <AnalyzeForm onAnalyze={analyzeRepo} />
         ) : (
           <>
-            {stats && <ProgressSection stats={stats} />}
+            {stats && <ProgressSection stats={stats} files={files} />}
 
-            <div className="grid grid-cols-3 gap-8">
+            <div className="grid grid-cols-5 gap-8">
               <div className="col-span-2">
                 <ActionPanel
                   batches={batches}
@@ -132,7 +128,7 @@ export default function App() {
                   onGetBatchFiles={getBatchFiles}
                 />
               </div>
-              <div className="col-span-1">
+              <div className="col-span-3">
                 <ActivityFeed activity={activity} />
               </div>
             </div>

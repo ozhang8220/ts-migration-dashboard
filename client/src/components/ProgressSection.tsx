@@ -1,15 +1,17 @@
-import type { Stats } from '../types';
+import { useState, useRef, useEffect } from 'react';
+import type { Stats, MigrationFile } from '../types';
 
 interface Props {
   stats: Stats;
+  files: MigrationFile[];
 }
 
 const statusCards = [
-  { key: 'merged', label: 'Merged', icon: '\u2705', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', count: 'text-green-600' },
-  { key: 'pr_open', label: 'PR Open', icon: '\uD83D\uDD17', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', count: 'text-amber-600' },
-  { key: 'in_progress', label: 'In Progress', icon: '\uD83D\uDD04', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', count: 'text-blue-600' },
-  { key: 'pending', label: 'Pending', icon: '\u23F3', bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-500', count: 'text-gray-600' },
-  { key: 'needs_human', label: 'Needs Attention', icon: '\u26A0\uFE0F', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', count: 'text-orange-600' },
+  { key: 'merged', label: 'Completed', icon: '\u2705', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', count: 'text-green-600' },
+  { key: 'pr_open', label: 'Ready for Review', icon: '\uD83D\uDC40', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', count: 'text-amber-600' },
+  { key: 'in_progress', label: 'Devin Working', icon: '\uD83D\uDD04', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', count: 'text-blue-600' },
+  { key: 'pending', label: 'Queued', icon: '\u23F3', bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-500', count: 'text-gray-600' },
+  { key: 'needs_human', label: 'Feedback Needed', icon: '\uD83D\uDCAC', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', count: 'text-orange-600' },
 ];
 
 function formatDuration(totalSeconds: number): string {
@@ -22,9 +24,32 @@ function formatDuration(totalSeconds: number): string {
   return `${hours}h ${remainMinutes}m`;
 }
 
-export default function ProgressSection({ stats }: Props) {
+function getDisplayPath(path: string, status: string): string {
+  if (status === 'merged') {
+    return path.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
+  }
+  return path;
+}
+
+export default function ProgressSection({ stats, files }: Props) {
   const { progressPercent, byStatus, totalFiles, totalSessionDurationSeconds, sessionCount, rateLimit } = stats;
   const merged = byStatus['merged'] || 0;
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setExpandedCard(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleCard = (key: string) => {
+    setExpandedCard(expandedCard === key ? null : key);
+  };
 
   return (
     <div className="space-y-6">
@@ -70,19 +95,53 @@ export default function ProgressSection({ stats }: Props) {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-5 gap-4">
-        {statusCards.map((card) => (
-          <div
-            key={card.key}
-            className={`rounded-xl border p-4 ${card.bg} ${card.border} transition-all hover:shadow-sm`}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-base">{card.icon}</span>
-              <span className={`text-sm font-medium ${card.text}`}>{card.label}</span>
+      <div className="grid grid-cols-5 gap-4" ref={dropdownRef}>
+        {statusCards.map((card) => {
+          const cardCount = byStatus[card.key] || 0;
+          const isExpanded = expandedCard === card.key;
+          const cardFiles = files.filter((f) => f.status === card.key);
+
+          return (
+            <div key={card.key} className="relative">
+              <button
+                onClick={() => cardCount > 0 && toggleCard(card.key)}
+                className={`w-full text-left rounded-xl border p-4 ${card.bg} ${card.border} transition-all hover:shadow-sm ${
+                  cardCount > 0 ? 'cursor-pointer' : 'cursor-default'
+                } ${isExpanded ? 'ring-2 ring-blue-300' : ''}`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">{card.icon}</span>
+                  <span className={`text-sm font-medium ${card.text}`}>{card.label}</span>
+                </div>
+                <span className={`text-3xl font-bold ${card.count}`}>{cardCount}</span>
+              </button>
+
+              {isExpanded && cardFiles.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-gray-200 shadow-lg z-20 max-h-64 overflow-y-auto">
+                  {cardFiles.map((file) => (
+                    <div key={file.id} className="px-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-mono text-gray-700 truncate flex-1">
+                          {getDisplayPath(file.path, file.status)}
+                        </span>
+                        {file.pr_url && file.pr_number && (
+                          <a
+                            href={file.pr_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-500 hover:underline ml-2 whitespace-nowrap"
+                          >
+                            PR #{file.pr_number}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <span className={`text-3xl font-bold ${card.count}`}>{byStatus[card.key] || 0}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

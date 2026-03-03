@@ -18,15 +18,23 @@ const batchStatusConfig: Record<string, string> = {
 };
 
 const fileStatusLabels: Record<string, string> = {
-  pending: 'Pending',
+  pending: 'Queued',
   queued: 'Queued',
-  in_progress: 'In Progress',
-  pr_open: 'PR Open',
-  merged: 'Merged',
-  needs_human: 'Needs Attention',
+  in_progress: 'Devin Working',
+  pr_open: 'Ready for Review',
+  merged: 'Completed',
+  needs_human: 'Feedback Needed',
   failed: 'Failed',
   skipped: 'Skipped',
 };
+
+function getDisplayFilename(path: string, status: string): string {
+  const filename = path.split('/').pop() || path;
+  if (status === 'merged') {
+    return filename.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
+  }
+  return filename;
+}
 
 export default function ActionPanel({ batches, autoProgress, onStartBatch, onToggleAutoProgress, onResumeBatch, onGetBatchFiles }: Props) {
   const [batchSize, setBatchSize] = useState(5);
@@ -82,21 +90,21 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Batch Control</h2>
+    <div className="bg-white rounded-xl border border-gray-200 p-6 flex flex-col h-full">
+      <h2 className="text-lg font-semibold text-gray-900 mb-3">Batch Control</h2>
 
       {haltedBatch && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-red-700">Batch Halted</p>
-              <p className="text-xs text-red-500 mt-1">
-                Batch {haltedBatch.id} was halted due to {haltedBatch.failed}+ failures. Auto-progression is paused.
+              <p className="text-xs text-red-500 mt-0.5">
+                {haltedBatch.id}: {haltedBatch.failed}+ failures
               </p>
             </div>
             <button
               onClick={handleResume}
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg text-sm transition-colors"
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-medium rounded-lg text-xs transition-colors"
             >
               Resume
             </button>
@@ -104,49 +112,37 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         </div>
       )}
 
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-500">Batch Size:</label>
-          <select
-            value={batchSize}
-            onChange={(e) => setBatchSize(Number(e.target.value))}
-            className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-          >
-            <option value={3}>3 files</option>
-            <option value={5}>5 files</option>
-            <option value={8}>8 files</option>
-          </select>
-        </div>
+      {/* Controls: all on one line */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <select
+          value={batchSize}
+          onChange={(e) => setBatchSize(Number(e.target.value))}
+          className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        >
+          <option value={3}>3 files</option>
+          <option value={5}>5 files</option>
+          <option value={8}>8 files</option>
+        </select>
 
         <button
           onClick={handleStart}
           disabled={isStarting}
-          className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-300 disabled:text-blue-100 text-white font-medium rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-300 disabled:text-blue-100 text-white font-medium rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30"
         >
-          {isStarting ? (
-            <span className="flex items-center gap-2">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Starting&hellip;
-            </span>
-          ) : (
-            'Start Next Batch'
-          )}
+          {isStarting ? 'Starting...' : 'Start Batch'}
         </button>
 
         <div className="flex items-center gap-2 ml-auto">
-          <label className="text-sm text-gray-500">Auto-progress:</label>
+          <label className="text-xs text-gray-500">Auto</label>
           <button
             onClick={() => onToggleAutoProgress(!autoProgress)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
               autoProgress ? 'bg-blue-600' : 'bg-gray-300'
             }`}
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                autoProgress ? 'translate-x-6' : 'translate-x-1'
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                autoProgress ? 'translate-x-5' : 'translate-x-0.5'
               }`}
             />
           </button>
@@ -154,44 +150,36 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
       </div>
 
       {error && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
           {error}
         </div>
       )}
 
       {lastResult && !error && (
-        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
-          Batch <span className="font-mono">{lastResult.batchId}</span> created &mdash; {lastResult.filesQueued} files queued
+        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+          Batch <span className="font-mono">{lastResult.batchId}</span> \u2014 {lastResult.filesQueued} files queued
         </div>
       )}
 
       {activeBatch && (
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center gap-2 mb-1">
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-sm font-medium text-blue-700">Active Batch: {activeBatch.id}</span>
+            <span className="text-xs font-medium text-blue-700">Active: {activeBatch.id}</span>
           </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <span className="text-gray-500">Total:</span>{' '}
-              <span className="text-gray-900">{activeBatch.total_files}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Completed:</span>{' '}
-              <span className="text-green-600">{activeBatch.completed}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Failed:</span>{' '}
-              <span className="text-red-600">{activeBatch.failed}</span>
-            </div>
+          <div className="flex gap-4 text-xs">
+            <span className="text-gray-500">Total: <span className="text-gray-900">{activeBatch.total_files}</span></span>
+            <span className="text-gray-500">Done: <span className="text-green-600">{activeBatch.completed}</span></span>
+            <span className="text-gray-500">Failed: <span className="text-red-600">{activeBatch.failed}</span></span>
           </div>
         </div>
       )}
 
+      {/* Batch History - scrollable to fill remaining space */}
       {batches.length > 0 && (
-        <div className="mt-4">
+        <div className="mt-3 flex-1 flex flex-col min-h-0">
           <h3 className="text-sm font-medium text-gray-500 mb-2">Batch History</h3>
-          <div className="space-y-1">
+          <div className="space-y-1 flex-1 overflow-y-auto">
             {batches.slice(0, 10).map((batch) => {
               const isExpanded = expandedBatchId === batch.id;
               const bFiles = batchFilesCache[batch.id];
@@ -201,7 +189,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                 <div key={batch.id} className="border border-gray-100 rounded-lg overflow-hidden">
                   <button
                     onClick={() => toggleBatchExpansion(batch.id)}
-                    className="w-full flex items-center justify-between text-sm p-3 hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center justify-between text-xs p-2.5 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-center gap-2">
                       <svg
@@ -214,8 +202,6 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                       <span className="font-mono text-gray-700">{batch.id}</span>
                       <span className="text-gray-400">
                         {batch.total_files} files
-                        {batch.completed > 0 && <span className="text-green-600 ml-1">({batch.completed} done)</span>}
-                        {batch.failed > 0 && <span className="text-red-600 ml-1">({batch.failed} failed)</span>}
                       </span>
                     </div>
                     <span
@@ -228,20 +214,20 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t border-gray-100 bg-gray-50 px-4 py-2">
+                    <div className="border-t border-gray-100 bg-gray-50 px-3 py-2">
                       {isLoading ? (
-                        <p className="text-xs text-gray-400 py-2">Loading files...</p>
+                        <p className="text-xs text-gray-400 py-1">Loading files...</p>
                       ) : bFiles && bFiles.length > 0 ? (
-                        <div className="space-y-1">
+                        <div className="space-y-0.5">
                           {bFiles.map((file, idx) => {
                             const isLast = idx === bFiles.length - 1;
                             const connector = isLast ? '\u2514' : '\u251C';
                             const statusLabel = fileStatusLabels[file.status] || file.status;
                             return (
                               <div key={file.id} className="flex items-center gap-2 text-xs py-0.5">
-                                <span className="text-gray-300 font-mono">{connector}{'\u2500\u2500'}</span>
-                                <span className="font-mono text-gray-700">{file.path.split('/').pop()}</span>
-                                <span className="text-gray-400">{'\u2192'}</span>
+                                <span className="text-gray-300 font-mono">{connector}\u2500\u2500</span>
+                                <span className="font-mono text-gray-700">{getDisplayFilename(file.path, file.status)}</span>
+                                <span className="text-gray-400">\u2192</span>
                                 <span className={`${
                                   file.status === 'merged' ? 'text-green-600' :
                                   file.status === 'failed' ? 'text-red-600' :
@@ -258,7 +244,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                           })}
                         </div>
                       ) : (
-                        <p className="text-xs text-gray-400 py-2">No files found for this batch</p>
+                        <p className="text-xs text-gray-400 py-1">No files found</p>
                       )}
                     </div>
                   )}
