@@ -179,7 +179,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
                         #{file.pr_number}
                       </a>
                     ) : (
-                      <span className="text-gray-300">\u2014</span>
+                      <span className="text-gray-300">{"\u2014"}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
@@ -193,7 +193,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
                         View
                       </a>
                     ) : (
-                      <span className="text-gray-300">\u2014</span>
+                      <span className="text-gray-300">{"\u2014"}</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -210,7 +210,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
                           }}
                           title="Change status"
                         >
-                          <option value="" disabled>\u22EF</option>
+                          <option value="" disabled>{"\u22EF"}</option>
                           <option value="skipped">Skip</option>
                           <option value="pending">Reset to Queued</option>
                         </select>

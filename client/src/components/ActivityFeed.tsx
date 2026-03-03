@@ -63,11 +63,11 @@ export default function ActivityFeed({ activity }: Props) {
                 <span className="text-xs text-gray-400 whitespace-nowrap min-w-[70px]">
                   {formatTime(entry.created_at)}
                 </span>
-                <span className="text-gray-300">\u2014</span>
+                <span className="text-gray-300">{"\u2014"}</span>
                 {entry.file_path ? (
                   <>
                     <span className="font-mono text-gray-700">{getDisplayFilename(entry.file_path, entry.new_status)}</span>
-                    <span className="text-gray-300">\u2192</span>
+                    <span className="text-gray-300">{"\u2192"}</span>
                     <span className="text-gray-600">{label}</span>
                     <span>{emoji}</span>
                   </>

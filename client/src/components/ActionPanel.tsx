@@ -157,7 +157,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
 
       {lastResult && !error && (
         <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-          Batch <span className="font-mono">{lastResult.batchId}</span> \u2014 {lastResult.filesQueued} files queued
+          Batch <span className="font-mono">{lastResult.batchId}</span> {"\u2014"} {lastResult.filesQueued} files queued
         </div>
       )}
 
@@ -225,9 +225,9 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                             const statusLabel = fileStatusLabels[file.status] || file.status;
                             return (
                               <div key={file.id} className="flex items-center gap-2 text-xs py-0.5">
-                                <span className="text-gray-300 font-mono">{connector}\u2500\u2500</span>
+                                <span className="text-gray-300 font-mono">{connector}{"\u2500\u2500"}</span>
                                 <span className="font-mono text-gray-700">{getDisplayFilename(file.path, file.status)}</span>
-                                <span className="text-gray-400">\u2192</span>
+                                <span className="text-gray-400">{"\u2192"}</span>
                                 <span className={`${
                                   file.status === 'merged' ? 'text-green-600' :
                                   file.status === 'failed' ? 'text-red-600' :
