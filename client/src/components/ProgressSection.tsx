@@ -7,11 +7,11 @@ interface Props {
 }
 
 const statusCards = [
-  { key: 'merged', label: 'Completed', icon: '\u2705', bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', count: 'text-green-600' },
-  { key: 'pr_open', label: 'Ready for Review', icon: '\uD83D\uDC40', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', count: 'text-amber-600' },
-  { key: 'needs_human', label: 'Feedback Needed', icon: '\uD83D\uDCAC', bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', count: 'text-orange-600' },
-  { key: 'in_progress', label: 'In Progress', icon: '\uD83D\uDD04', bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', count: 'text-blue-600' },
-  { key: 'pending', label: 'Queued', icon: '\u23F3', bg: 'bg-gray-50', border: 'border-gray-200', text: 'text-gray-500', count: 'text-gray-600' },
+  { key: 'merged', label: 'Completed', bg: 'bg-[#DCFCE7]', text: 'text-[#16A34A]', count: 'text-[#16A34A]' },
+  { key: 'pr_open', label: 'Ready for Review', bg: 'bg-[#FEF3C7]', text: 'text-[#D97706]', count: 'text-[#D97706]' },
+  { key: 'needs_human', label: 'Feedback Needed', bg: 'bg-[#FED7AA]', text: 'text-[#EA580C]', count: 'text-[#EA580C]' },
+  { key: 'in_progress', label: 'In Progress', bg: 'bg-[#DBEAFE]', text: 'text-[#2563EB]', count: 'text-[#2563EB]' },
+  { key: 'pending', label: 'Queued', bg: 'bg-[#F3F4F6]', text: 'text-[#6B7280]', count: 'text-[#6B7280]' },
 ];
 
 function formatDuration(totalSeconds: number): string {
@@ -54,23 +54,23 @@ export default function ProgressSection({ stats, files }: Props) {
   return (
     <div className="space-y-6">
       {/* Progress Bar */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="bg-white rounded-lg border border-[#E5E7EB] p-6" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Migration Progress</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h2 className="text-[15px] font-semibold text-[#111827]">Migration Progress</h2>
+            <p className="text-sm text-[#6B7280] mt-0.5">
               {merged} of {totalFiles} files migrated to TypeScript
             </p>
           </div>
           <div className="flex items-center gap-4">
             {rateLimit.remaining !== null && (
               <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${
                   rateLimit.remaining < 100
                     ? 'bg-red-50 border-red-200 text-red-600'
                     : rateLimit.remaining < 500
                     ? 'bg-amber-50 border-amber-200 text-amber-600'
-                    : 'bg-gray-50 border-gray-200 text-gray-500'
+                    : 'bg-[#F3F4F6] border-[#E5E7EB] text-[#6B7280]'
                 }`}
                 title={rateLimit.resetsAt ? `Resets at ${new Date(rateLimit.resetsAt).toLocaleTimeString()}` : ''}
               >
@@ -79,16 +79,16 @@ export default function ProgressSection({ stats, files }: Props) {
               </span>
             )}
             {sessionCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 border border-blue-200 text-blue-600">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#F3F4F6] border border-[#E5E7EB] text-[#6B7280]">
                 Devin: {formatDuration(totalSessionDurationSeconds)} ({sessionCount} sessions)
               </span>
             )}
-            <span className="text-3xl font-bold text-blue-600">{progressPercent}%</span>
+            <span className="text-3xl font-bold text-[#3B82F6]">{progressPercent}%</span>
           </div>
         </div>
-        <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+        <div className="w-full bg-[#F3F4F6] rounded-full h-2.5 overflow-hidden">
           <div
-            className="h-full rounded-full bg-blue-500 transition-all duration-700 ease-out"
+            className="h-full rounded-full bg-[#3B82F6] transition-all duration-700 ease-out"
             style={{ width: `${Math.max(progressPercent, 1)}%` }}
           />
         </div>
@@ -105,23 +105,20 @@ export default function ProgressSection({ stats, files }: Props) {
             <div key={card.key} className="relative">
               <button
                 onClick={() => cardCount > 0 && toggleCard(card.key)}
-                className={`w-full text-left rounded-xl border p-4 ${card.bg} ${card.border} transition-all hover:shadow-sm ${
+                className={`w-full text-left rounded-lg p-4 ${card.bg} transition-all hover:shadow-sm ${
                   cardCount > 0 ? 'cursor-pointer' : 'cursor-default'
-                } ${isExpanded ? 'ring-2 ring-blue-300' : ''}`}
+                } ${isExpanded ? 'ring-2 ring-[#3B82F6]/30' : ''}`}
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-base">{card.icon}</span>
-                  <span className={`text-sm font-medium ${card.text}`}>{card.label}</span>
-                </div>
-                <span className={`text-3xl font-bold ${card.count}`}>{cardCount}</span>
+                <p className={`text-xs font-medium ${card.text} mb-1`}>{card.label}</p>
+                <span className={`text-2xl font-bold ${card.count}`}>{cardCount}</span>
               </button>
 
               {isExpanded && cardFiles.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-gray-200 shadow-lg z-20 max-h-64 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-[#E5E7EB] shadow-lg z-20 max-h-64 overflow-y-auto">
                   {cardFiles.map((file) => (
-                    <div key={file.id} className="px-3 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                    <div key={file.id} className="px-3 py-2 border-b border-[#F3F4F6] last:border-0 hover:bg-[#F9FAFB]">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono text-gray-700 truncate flex-1">
+                        <span className="text-xs font-mono text-[#374151] truncate flex-1">
                           {getDisplayPath(file.path, file.status)}
                         </span>
                         {file.pr_url && file.pr_number && (
@@ -129,7 +126,7 @@ export default function ProgressSection({ stats, files }: Props) {
                             href={file.pr_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs text-blue-500 hover:underline ml-2 whitespace-nowrap"
+                            className="text-xs text-[#3B82F6] hover:underline ml-2 whitespace-nowrap"
                           >
                             PR #{file.pr_number}
                           </a>

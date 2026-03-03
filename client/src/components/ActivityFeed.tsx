@@ -45,11 +45,11 @@ function getDisplayFilename(path: string, status: string): string {
 
 export default function ActivityFeed({ activity }: Props) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 flex flex-col h-full">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Activity Feed</h2>
+    <div className="bg-white rounded-lg border border-[#E5E7EB] p-5 flex flex-col h-full" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+      <h2 className="text-[15px] font-semibold text-[#111827] mb-3">Activity Feed</h2>
       <div className="space-y-0.5 flex-1 overflow-y-auto pr-2">
         {activity.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-8">No activity yet</p>
+          <p className="text-sm text-[#9CA3AF] text-center py-8">No activity yet</p>
         ) : (
           activity.map((entry) => {
             const emoji = statusEmojis[entry.new_status] || '';
@@ -58,21 +58,21 @@ export default function ActivityFeed({ activity }: Props) {
             return (
               <div
                 key={entry.id}
-                className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-gray-50 transition-colors text-sm"
+                className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#F9FAFB] transition-colors text-sm"
               >
-                <span className="text-xs text-gray-400 whitespace-nowrap min-w-[70px]">
+                <span className="text-xs text-[#9CA3AF] whitespace-nowrap min-w-[70px]">
                   {formatTime(entry.created_at)}
                 </span>
-                <span className="text-gray-300">{"\u2014"}</span>
+                <span className="text-[#D1D5DB]">{"\u2014"}</span>
                 {entry.file_path ? (
                   <>
-                    <span className="font-mono text-gray-700">{getDisplayFilename(entry.file_path, entry.new_status)}</span>
-                    <span className="text-gray-300">{"\u2192"}</span>
-                    <span className="text-gray-600">{label}</span>
+                    <span className="font-mono text-[#374151]">{getDisplayFilename(entry.file_path, entry.new_status)}</span>
+                    <span className="text-[#D1D5DB]">{"\u2192"}</span>
+                    <span className="text-[#6B7280]">{label}</span>
                     <span>{emoji}</span>
                   </>
                 ) : (
-                  <span className="text-gray-600">{entry.message}</span>
+                  <span className="text-[#6B7280]">{entry.message}</span>
                 )}
               </div>
             );

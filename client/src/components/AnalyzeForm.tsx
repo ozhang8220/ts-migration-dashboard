@@ -32,38 +32,38 @@ export default function AnalyzeForm({ onAnalyze }: Props) {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-xl border border-gray-200 p-8">
+      <div className="bg-white rounded-lg border border-[#E5E7EB] p-8" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-[#111827] flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4">
             TS
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">Analyze a Repository</h2>
-          <p className="text-sm text-gray-500 mt-2">
+          <h2 className="text-2xl font-bold text-[#111827]">Analyze a Repository</h2>
+          <p className="text-sm text-[#6B7280] mt-2">
             Enter a GitHub repository to scan for JavaScript/JSX files and begin the TypeScript migration.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Repository</label>
+            <label className="block text-sm font-medium text-[#374151] mb-1">Repository</label>
             <input
               type="text"
               value={repoFullName}
               onChange={(e) => setRepoFullName(e.target.value)}
               placeholder="owner/repo (e.g. ozhang8220/shopdirect-frontend)"
-              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300"
+              className="w-full bg-white border border-[#E5E7EB] rounded-lg px-4 py-3 text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#3B82F6]"
               disabled={isAnalyzing}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Branch</label>
+            <label className="block text-sm font-medium text-[#374151] mb-1">Branch</label>
             <input
               type="text"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
               placeholder="main"
-              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-300"
+              className="w-full bg-white border border-[#E5E7EB] rounded-lg px-4 py-3 text-[#111827] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#3B82F6]"
               disabled={isAnalyzing}
             />
           </div>
@@ -71,7 +71,7 @@ export default function AnalyzeForm({ onAnalyze }: Props) {
           <button
             type="submit"
             disabled={isAnalyzing || !repoFullName.trim()}
-            className="w-full px-5 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-300 disabled:text-blue-100 text-white font-medium rounded-lg text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            className="w-full px-5 py-3 bg-[#111827] hover:bg-[#1F2937] disabled:bg-[#D1D5DB] text-white font-medium rounded-lg text-sm transition-colors"
           >
             {isAnalyzing ? (
               <span className="flex items-center justify-center gap-2">
@@ -88,34 +88,34 @@ export default function AnalyzeForm({ onAnalyze }: Props) {
         </form>
 
         {error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-[#DC2626]">
             {error}
           </div>
         )}
 
         {result && (
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <h3 className="text-sm font-semibold text-green-700 mb-2">Analysis Complete</h3>
+          <div className="mt-6 p-4 bg-[#DCFCE7] border border-green-200 rounded-lg">
+            <h3 className="text-sm font-semibold text-[#16A34A] mb-2">Analysis Complete</h3>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-gray-500">Total Files:</span>{' '}
-                <span className="text-gray-900 font-medium">{result.totalFiles}</span>
+                <span className="text-[#6B7280]">Total Files:</span>{' '}
+                <span className="text-[#111827] font-medium">{result.totalFiles}</span>
               </div>
               {Object.entries(result.byComplexity).map(([key, count]) => (
                 <div key={key}>
-                  <span className="text-gray-500 capitalize">{key}:</span>{' '}
-                  <span className="text-gray-900 font-medium">{count}</span>
+                  <span className="text-[#6B7280] capitalize">{key}:</span>{' '}
+                  <span className="text-[#111827] font-medium">{count}</span>
                 </div>
               ))}
             </div>
             {result.message && (
-              <p className="mt-2 text-xs text-gray-500">{result.message}</p>
+              <p className="mt-2 text-xs text-[#6B7280]">{result.message}</p>
             )}
           </div>
         )}
 
         <div className="mt-6 text-center">
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-[#9CA3AF]">
             Requires GITHUB_TOKEN to be configured on the server. Scans src/ for .js and .jsx files.
           </p>
         </div>
