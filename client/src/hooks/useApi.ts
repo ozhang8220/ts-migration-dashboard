@@ -95,6 +95,10 @@ export function useDashboardData() {
     await refresh();
   }, [refresh]);
 
+  const getBatchFiles = useCallback(async (batchId: string): Promise<MigrationFile[]> => {
+    return fetchJson<MigrationFile[]>(`/batches/${batchId}/files`);
+  }, []);
+
   return {
     stats,
     files,
@@ -110,5 +114,6 @@ export function useDashboardData() {
     analyzeRepo,
     toggleAutoProgress,
     resumeBatch,
+    getBatchFiles,
   };
 }

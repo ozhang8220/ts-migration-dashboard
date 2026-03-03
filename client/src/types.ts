@@ -17,6 +17,7 @@ export interface MigrationFile {
   created_at: string;
   updated_at: string;
   session_duration: number | null;
+  devin_url: string | null;
 }
 
 export interface RateLimitInfo {

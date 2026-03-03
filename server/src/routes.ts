@@ -55,7 +55,10 @@ router.get('/files', (req: Request, res: Response) => {
   const db = getDb();
   const { status, sort } = req.query;
 
-  let query = 'SELECT f.*, ds.duration_seconds as session_duration FROM files f LEFT JOIN devin_sessions ds ON ds.file_id = f.id AND ds.duration_seconds IS NOT NULL';
+  let query = `SELECT f.*,
+    (SELECT duration_seconds FROM devin_sessions WHERE file_id = f.id AND duration_seconds IS NOT NULL ORDER BY started_at DESC LIMIT 1) as session_duration,
+    (SELECT devin_url FROM devin_sessions WHERE file_id = f.id ORDER BY started_at DESC LIMIT 1) as devin_url
+  FROM files f`;
   const params: string[] = [];
 
   if (status && typeof status === 'string') {
@@ -180,6 +183,19 @@ router.post('/batches/:id/resume', (_req: Request, res: Response) => {
   ).run(`Batch ${batchId} resumed by user`);
 
   res.json({ ok: true, batchId, status: 'running' });
+});
+
+// GET /api/batches/:id/files
+router.get('/batches/:id/files', (req: Request, res: Response) => {
+  const db = getDb();
+  const batchId = req.params.id;
+
+  const files = db.prepare(
+    `SELECT f.*,
+      (SELECT devin_url FROM devin_sessions WHERE file_id = f.id ORDER BY started_at DESC LIMIT 1) as devin_url
+    FROM files f WHERE f.batch_id = ? ORDER BY f.path ASC`
+  ).all(batchId);
+  res.json(files);
 });
 
 // GET /api/activity

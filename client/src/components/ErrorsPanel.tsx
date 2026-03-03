@@ -20,14 +20,14 @@ export default function ErrorsPanel({ errors }: Props) {
   if (errors.length === 0) return null;
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-800/30 transition-colors"
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-red-400">Error Log</span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/20 text-red-300">
+          <span className="text-sm font-semibold text-red-600">Error Log</span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600">
             {errors.length}
           </span>
         </div>
@@ -41,18 +41,18 @@ export default function ErrorsPanel({ errors }: Props) {
       </button>
 
       {expanded && (
-        <div className="border-t border-gray-800 max-h-64 overflow-y-auto">
+        <div className="border-t border-gray-200 max-h-64 overflow-y-auto">
           {errors.map((err) => (
-            <div key={err.id} className="px-6 py-3 border-b border-gray-800/50 last:border-0">
+            <div key={err.id} className="px-6 py-3 border-b border-gray-100 last:border-0">
               <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-500 min-w-[70px]">{formatTime(err.created_at)}</span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-gray-800 text-gray-400">
+                <span className="text-xs text-gray-400 min-w-[70px]">{formatTime(err.created_at)}</span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-gray-100 text-gray-500">
                   {err.source}
                 </span>
-                <span className="text-sm text-red-300 truncate">{err.message}</span>
+                <span className="text-sm text-red-600 truncate">{err.message}</span>
               </div>
               {err.details && (
-                <p className="mt-1 text-xs text-gray-500 ml-[86px] truncate" title={err.details}>
+                <p className="mt-1 text-xs text-gray-400 ml-[86px] truncate" title={err.details}>
                   {err.details}
                 </p>
               )}
