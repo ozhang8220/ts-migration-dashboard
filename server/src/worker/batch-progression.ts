@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, logError } from '../database';
-import { createSessionWithRetry } from '../devin/client';
+import { createSessionWithRetry, MIGRATION_STRUCTURED_OUTPUT_SCHEMA } from '../devin/client';
 import { buildMigrationPrompt } from '../devin/prompt-builder';
 
 const BATCH_FAILURE_HALT_THRESHOLD = 3;
@@ -24,13 +24,14 @@ interface BatchRow {
   failed: number;
 }
 
-export function getRepoConfig(): { owner: string; repo: string; branch: string; autoProgress: boolean } | null {
+export function getRepoConfig(): { owner: string; repo: string; branch: string; autoProgress: boolean; repoId: string | null } | null {
   const db = getDb();
   const config = db.prepare('SELECT * FROM repo_config WHERE id = 1').get() as {
     owner: string;
     repo: string;
     branch: string;
     auto_progress: number;
+    repo_id: string | null;
   } | undefined;
 
   if (!config) return null;
@@ -40,7 +41,12 @@ export function getRepoConfig(): { owner: string; repo: string; branch: string; 
     repo: config.repo,
     branch: config.branch,
     autoProgress: config.auto_progress === 1,
+    repoId: config.repo_id || (config.owner && config.repo ? `${config.owner}/${config.repo}:${config.branch}` : null),
   };
+}
+
+interface FileRowFull extends FileRow {
+  repo_id: string | null;
 }
 
 export function updateFileStatus(
@@ -51,10 +57,11 @@ export function updateFileStatus(
   prNumber?: number
 ): void {
   const db = getDb();
-  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as FileRow | undefined;
+  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as FileRowFull | undefined;
   if (!file) return;
 
   const oldStatus = file.status;
+  const repoId = file.repo_id ?? null;
 
   if (errorReason) {
     db.prepare(
@@ -71,8 +78,8 @@ export function updateFileStatus(
   }
 
   db.prepare(
-    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
-  ).run(fileId, file.path, oldStatus, newStatus, `${file.path} → ${capitalize(newStatus)}`);
+    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
+  ).run(fileId, file.path, oldStatus, newStatus, `${file.path} → ${capitalize(newStatus)}`, repoId);
 }
 
 function capitalize(s: string): string {
@@ -120,9 +127,10 @@ export function shouldHaltBatch(batchId: string): boolean {
     ).run(batchId);
     console.log(`[batch] Batch ${batchId} HALTED — ${batch.failed} failures exceeded threshold`);
 
+    const batchRepoId = (batch as BatchRow & { repo_id?: string | null }).repo_id ?? null;
     db.prepare(
-      "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (NULL, NULL, NULL, 'halted', ?, datetime('now'))"
-    ).run(`Batch ${batchId} halted: ${batch.failed} failures — human investigation needed`);
+      "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (NULL, NULL, NULL, 'halted', ?, ?, datetime('now'))"
+    ).run(`Batch ${batchId} halted: ${batch.failed} failures — human investigation needed`, batchRepoId);
 
     return true;
   }
@@ -140,16 +148,18 @@ export async function checkBatchProgression(): Promise<void> {
     return;
   }
 
-  // 1. Find current running batch
+  const repoId = config.repoId;
+  if (!repoId) return;
+
+  // 1. Find current running batch for this repo
   const currentBatch = db.prepare(
-    "SELECT * FROM batches WHERE status = 'running' LIMIT 1"
-  ).get() as BatchRow | undefined;
+    "SELECT * FROM batches WHERE status = 'running' AND repo_id = ? LIMIT 1"
+  ).get(repoId) as BatchRow | undefined;
 
   if (!currentBatch) {
-    // No running batch — check if we should auto-start one
     const pendingCount = (db.prepare(
-      "SELECT COUNT(*) as count FROM files WHERE status = 'pending'"
-    ).get() as { count: number }).count;
+      "SELECT COUNT(*) as count FROM files WHERE status = 'pending' AND repo_id = ?"
+    ).get(repoId) as { count: number }).count;
 
     if (pendingCount > 0) {
       console.log(`[batch-progression] No active batch, ${pendingCount} files pending — auto-starting`);
@@ -185,10 +195,10 @@ export async function checkBatchProgression(): Promise<void> {
 
   console.log(`[batch-progression] Batch ${currentBatch.id} finalized: ${newStatus} (${completed} completed, ${failed} failed)`);
 
-  // 4. Check if there are more pending files
+  // 4. Check if there are more pending files for this repo
   const remaining = (db.prepare(
-    "SELECT COUNT(*) as count FROM files WHERE status = 'pending'"
-  ).get() as { count: number }).count;
+    "SELECT COUNT(*) as count FROM files WHERE status = 'pending' AND repo_id = ?"
+  ).get(repoId) as { count: number }).count;
 
   if (remaining > 0) {
     console.log(`[batch-progression] ${remaining} files remaining — starting next batch in 10s`);
@@ -212,16 +222,22 @@ export async function startNextBatch(batchSize: number): Promise<{
   devinEnabled: boolean;
 }> {
   const db = getDb();
+  const config = getRepoConfig();
+  const repoId = config?.repoId;
+  if (!repoId) {
+    throw new Error('No repository selected. Analyze a repo first.');
+  }
+
   const { isDevinConfigured } = await import('../devin/client');
   const devinEnabled = isDevinConfigured();
 
   const pendingFiles = db.prepare(
-    `SELECT * FROM files WHERE status = 'pending'
+    `SELECT * FROM files WHERE status = 'pending' AND repo_id = ?
      ORDER BY dep_depth ASC,
      CASE complexity WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END ASC,
      loc ASC
      LIMIT ?`
-  ).all(batchSize) as FileRow[];
+  ).all(repoId, batchSize) as FileRow[];
 
   if (pendingFiles.length === 0) {
     throw new Error('No pending files available');
@@ -229,22 +245,21 @@ export async function startNextBatch(batchSize: number): Promise<{
 
   const batchId = `batch-${uuidv4().slice(0, 8)}`;
 
-  // Create batch and queue files
   const insertBatch = db.prepare(
-    "INSERT INTO batches (id, status, total_files, started_at) VALUES (?, 'running', ?, datetime('now'))"
+    "INSERT INTO batches (id, repo_id, status, total_files, started_at) VALUES (?, ?, 'running', ?, datetime('now'))"
   );
   const updateFileQueued = db.prepare(
     "UPDATE files SET status = 'queued', batch_id = ?, updated_at = datetime('now') WHERE id = ?"
   );
   const insertActivity = db.prepare(
-    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
+    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
   );
 
   const transaction = db.transaction(() => {
-    insertBatch.run(batchId, pendingFiles.length);
+    insertBatch.run(batchId, repoId, pendingFiles.length);
     for (const file of pendingFiles) {
       updateFileQueued.run(batchId, file.id);
-      insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} → Queued (Batch ${batchId})`);
+      insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} → Queued (Batch ${batchId})`, repoId);
     }
   });
 
@@ -259,8 +274,8 @@ export async function startNextBatch(batchSize: number): Promise<{
     const baseBranch = config?.branch || process.env.GITHUB_BASE_BRANCH || 'main';
 
     const mergedFiles = db.prepare(
-      "SELECT path FROM files WHERE status = 'merged'"
-    ).all() as { path: string }[];
+      "SELECT path FROM files WHERE status = 'merged' AND repo_id = ?"
+    ).all(repoId) as { path: string }[];
     const alreadyConverted = mergedFiles.map(f =>
       f.path.endsWith('.jsx')
         ? f.path.replace(/\.jsx$/, '.tsx')
@@ -280,18 +295,24 @@ export async function startNextBatch(batchSize: number): Promise<{
           { repoFullName, baseBranch, alreadyConverted }
         );
 
-        const session = await createSessionWithRetry(prompt, file.path);
+        const session = await createSessionWithRetry(
+          prompt,
+          file.path,
+          3,
+          MIGRATION_STRUCTURED_OUTPUT_SCHEMA as Record<string, unknown>,
+          repoFullName
+        );
 
         const sessionId = `sess-${uuidv4().slice(0, 8)}`;
         db.prepare(
-          "INSERT INTO devin_sessions (id, devin_session_id, file_id, batch_id, status, devin_url, started_at) VALUES (?, ?, ?, ?, 'running', ?, datetime('now'))"
-        ).run(sessionId, session.session_id, file.id, batchId, session.url);
+          "INSERT INTO devin_sessions (id, devin_session_id, file_id, batch_id, repo_id, status, devin_url, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?, datetime('now'))"
+        ).run(sessionId, session.session_id, file.id, batchId, repoId, session.url);
 
         db.prepare(
           "UPDATE files SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?"
         ).run(file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} → In Progress (Devin Session Started)`);
+        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} → In Progress (Devin Session Started)`, repoId);
         console.log(`[batch] Created Devin session for ${file.path}: ${session.session_id}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
@@ -302,7 +323,7 @@ export async function startNextBatch(batchSize: number): Promise<{
           "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
         ).run(errorMsg, file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} → Failed (${errorMsg})`);
+        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} → Failed (${errorMsg})`, repoId);
         db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
 
         // Check if we should halt

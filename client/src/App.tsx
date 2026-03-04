@@ -5,7 +5,6 @@ import FileTable from './components/FileTable';
 import ActionPanel from './components/ActionPanel';
 import ActivityFeed from './components/ActivityFeed';
 import AnalyzeForm from './components/AnalyzeForm';
-import ErrorsPanel from './components/ErrorsPanel';
 import RepoSelector from './components/RepoSelector';
 import Sidebar from './components/Sidebar';
 
@@ -24,7 +23,6 @@ export default function App() {
     files,
     batches,
     activity,
-    errors,
     lastUpdated,
     loading,
     error,
@@ -85,7 +83,17 @@ export default function App() {
         {/* Header */}
         <header className="border-b border-[#E5E7EB] bg-white sticky top-0 z-10">
           <div className="px-8 py-3.5 flex items-center justify-between">
-            <h1 className="text-[15px] font-bold text-[#111827]">TypeScript Migration</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-[15px] font-bold text-[#111827]">TypeScript Migration</h1>
+              {repoConfig?.owner && repoConfig?.repo && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-[#F3F4F6] text-[#6B7280]">
+                  {repoConfig.owner}/{repoConfig.repo}
+                  {repoConfig.branch && repoConfig.branch !== 'main' && (
+                    <span className="ml-1.5 text-[#9CA3AF]">@{repoConfig.branch}</span>
+                  )}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 text-[13px] text-[#6B7280]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>Last updated: {formatTimestamp(lastUpdated)}</span>
@@ -124,8 +132,6 @@ export default function App() {
               </div>
 
               <FileTable files={files} onStatusChange={updateFileStatus} />
-
-              <ErrorsPanel errors={errors} />
             </>
           )}
         </main>

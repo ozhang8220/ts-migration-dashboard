@@ -18,8 +18,8 @@ const batchStatusConfig: Record<string, string> = {
 };
 
 const fileStatusLabels: Record<string, string> = {
-  pending: 'Queued',
-  queued: 'Queued',
+  pending: 'Waiting',
+  queued: 'In Batch',
   in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
@@ -157,7 +157,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
 
       {lastResult && !error && (
         <div className="mt-2 p-2 bg-[#DCFCE7] border border-green-200 rounded-md text-xs text-[#16A34A]">
-          Batch <span className="font-mono">{lastResult.batchId}</span> {"\u2014"} {lastResult.filesQueued} files queued
+          Batch <span className="font-mono">{lastResult.batchId}</span> {"\u2014"} {lastResult.filesQueued} files added
         </div>
       )}
 
@@ -180,7 +180,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         <div className="mt-3 flex-1 flex flex-col min-h-0">
           <h3 className="text-[13px] font-medium text-[#6B7280] mb-2">Batch History</h3>
           <div className="space-y-1 flex-1 overflow-y-auto">
-            {batches.slice(0, 10).map((batch) => {
+            {batches.slice(0, 25).map((batch) => {
               const isExpanded = expandedBatchId === batch.id;
               const bFiles = batchFilesCache[batch.id];
               const isLoading = loadingBatchFiles === batch.id;
@@ -224,7 +224,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                             const connector = isLast ? '\u2514' : '\u251C';
                             const statusLabel = fileStatusLabels[file.status] || file.status;
                             return (
-                              <div key={file.id} className="flex items-center gap-2 text-xs py-0.5">
+                              <div key={file.id} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
                                 <span className="text-[#D1D5DB] font-mono">{connector}{"\u2500\u2500"}</span>
                                 <span className="font-mono text-[#374151]">{getDisplayFilename(file.path, file.status)}</span>
                                 <span className="text-[#D1D5DB]">{"\u2192"}</span>
@@ -237,6 +237,11 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                                 {file.pr_url && file.pr_number && (
                                   <a href={file.pr_url} target="_blank" rel="noopener noreferrer" className="text-[#3B82F6] hover:underline">
                                     (PR #{file.pr_number})
+                                  </a>
+                                )}
+                                {file.devin_url && (
+                                  <a href={file.devin_url} target="_blank" rel="noopener noreferrer" className="text-[#3B82F6] hover:underline">
+                                    (Devin)
                                   </a>
                                 )}
                               </div>

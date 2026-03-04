@@ -39,11 +39,11 @@ export default function RepoSelector({ repoConfig, onAnalyze, showModal, onClose
 
   useEffect(() => {
     if (showModal) {
-      setRepoFullName(currentRepo || '');
+      setRepoFullName('');
       setBranch(currentBranch);
       setError(null);
     }
-  }, [showModal, currentRepo, currentBranch]);
+  }, [showModal, currentBranch]);
 
   const closeModal = () => {
     if (!isAnalyzing) {
@@ -77,7 +77,7 @@ export default function RepoSelector({ repoConfig, onAnalyze, showModal, onClose
           <div className="relative bg-white rounded-lg border border-[#E5E7EB] shadow-xl p-6 w-full max-w-[480px] mx-4">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-[#111827]">
-                {currentRepo ? 'Switch Repository' : 'Connect Repository'}
+                {currentRepo ? 'Add Repo' : 'Connect Repository'}
               </h3>
               <button
                 onClick={closeModal}
@@ -88,12 +88,6 @@ export default function RepoSelector({ repoConfig, onAnalyze, showModal, onClose
                 </svg>
               </button>
             </div>
-
-            {currentRepo && (
-              <p className="text-xs text-[#9CA3AF] mb-4">
-                Currently connected to <span className="font-medium text-[#6B7280]">{currentRepo}</span> ({currentBranch})
-              </p>
-            )}
 
             <form onSubmit={handleFormSubmit} className="space-y-4">
               <div>

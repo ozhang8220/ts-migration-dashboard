@@ -6,15 +6,15 @@ interface Props {
   onStatusChange: (fileId: string, status: string) => void;
 }
 
-const statusConfig: Record<FileStatus, { label: string; classes: string }> = {
-  pending: { label: 'Queued', classes: 'bg-[#F3F4F6] text-[#6B7280]' },
-  queued: { label: 'Queued', classes: 'bg-[#DBEAFE] text-[#2563EB]' },
-  in_progress: { label: 'In Progress', classes: 'bg-[#DBEAFE] text-[#2563EB]' },
-  pr_open: { label: 'Ready for Review', classes: 'bg-[#FEF3C7] text-[#D97706]' },
-  merged: { label: 'Completed', classes: 'bg-[#DCFCE7] text-[#16A34A]' },
-  needs_human: { label: 'Feedback Needed', classes: 'bg-[#FED7AA] text-[#EA580C]' },
-  failed: { label: 'Failed', classes: 'bg-[#FEE2E2] text-[#DC2626]' },
-  skipped: { label: 'Skipped', classes: 'bg-[#F3F4F6] text-[#6B7280]' },
+const statusConfig: Record<FileStatus, { label: string; classes: string; tooltip: string }> = {
+  pending: { label: 'Waiting', classes: 'bg-[#F3F4F6] text-[#6B7280]', tooltip: 'Waiting to be picked up by a batch' },
+  queued: { label: 'In Batch', classes: 'bg-[#DBEAFE] text-[#2563EB]', tooltip: 'Assigned to a batch, Devin session starting' },
+  in_progress: { label: 'In Progress', classes: 'bg-[#DBEAFE] text-[#2563EB]', tooltip: 'Devin is converting the file' },
+  pr_open: { label: 'Ready for Review', classes: 'bg-[#FEF3C7] text-[#D97706]', tooltip: 'PR is open — ready to review and merge' },
+  merged: { label: 'Completed', classes: 'bg-[#DCFCE7] text-[#16A34A]', tooltip: 'PR merged, conversion complete' },
+  needs_human: { label: 'Feedback Needed', classes: 'bg-[#FED7AA] text-[#EA580C]', tooltip: 'Needs your attention: PR closed without merge, session timed out, or partial conversion' },
+  failed: { label: 'Failed', classes: 'bg-[#FEE2E2] text-[#DC2626]', tooltip: 'Devin session failed' },
+  skipped: { label: 'Skipped', classes: 'bg-[#F3F4F6] text-[#6B7280]', tooltip: 'Skipped by user' },
 };
 
 const complexityConfig: Record<string, { dot: string; label: string }> = {
@@ -136,7 +136,12 @@ export default function FileTable({ files }: Props) {
               <SortHeader field="loc">Lines</SortHeader>
               <SortHeader field="status" className="min-w-[160px]">Status</SortHeader>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">PR Link</th>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Devin Session</th>
+              <th
+                className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider"
+                title="Links appear only for sessions started by this dashboard (Start Next Batch)"
+              >
+                Devin Session
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#F3F4F6]">
@@ -158,7 +163,10 @@ export default function FileTable({ files }: Props) {
                   <td className="px-4 py-3 text-sm text-[#6B7280]">{getPriorityLabel(file.dep_depth)}</td>
                   <td className="px-4 py-3 text-sm text-[#6B7280]">{file.loc}</td>
                   <td className="px-4 py-3 min-w-[160px]">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusCfg.classes}`}>
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusCfg.classes}`}
+                      title={statusCfg.tooltip}
+                    >
                       {statusCfg.label}
                     </span>
                   </td>
@@ -176,7 +184,7 @@ export default function FileTable({ files }: Props) {
                       <span className="text-[#D1D5DB]">{"\u2014"}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-4 py-3 text-sm" title={!file.devin_url ? 'Session link appears when this dashboard starts the batch' : undefined}>
                     {file.devin_url ? (
                       <a
                         href={file.devin_url}

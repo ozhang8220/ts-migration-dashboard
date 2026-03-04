@@ -101,5 +101,10 @@ npm test          # ✅ Pass
 - [ ] tsc --noEmit passes
 - [ ] npm test passes
 \`\`\`
+
+## Structured Output (Required)
+When you create the pull request, update the structured output immediately with:
+- \`pr_url\`: the full URL of the created PR (e.g. https://github.com/owner/repo/pull/123)
+- \`pr_number\`: the PR number as an integer (e.g. 123)
 `;
 }

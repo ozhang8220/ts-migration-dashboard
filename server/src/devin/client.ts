@@ -15,23 +15,49 @@ interface CreateSessionResponse {
   url: string;
 }
 
+interface PullRequestInfo {
+  url: string;
+}
+
 interface GetSessionResponse {
   session_id: string;
   status_enum: string;
   url: string;
   structured_output?: Record<string, unknown>;
+  pull_request?: PullRequestInfo | null;
   title?: string;
   created_at?: string;
   updated_at?: string;
 }
 
-export async function createSession(prompt: string, filePath?: string): Promise<CreateSessionResponse> {
+export const MIGRATION_STRUCTURED_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    pr_url: { type: 'string', description: 'Full URL of the created PR' },
+    pr_number: { type: 'integer', description: 'PR number' },
+  },
+  required: [],
+} as const;
+
+export async function createSession(
+  prompt: string,
+  filePath?: string,
+  structuredOutputSchema?: Record<string, unknown>,
+  repoFullName?: string
+): Promise<CreateSessionResponse> {
   const token = getToken();
 
-  const body: Record<string, unknown> = { prompt };
+  const body: Record<string, unknown> = {
+    prompt,
+    unlisted: true, // Hide from Devin chat — migration sessions are automated
+  };
   if (filePath) {
-    body.title = `[API Migration] Convert ${filePath} to TypeScript`;
+    const repoLabel = repoFullName ? `[${repoFullName}] ` : '';
+    body.title = `${repoLabel}Convert ${filePath} to TypeScript`;
     body.tags = ['ts-migration', 'automated', 'api-created'];
+  }
+  if (structuredOutputSchema) {
+    body.structured_output_schema = structuredOutputSchema;
   }
 
   const response = await fetch(`${DEVIN_API_BASE_URL}/sessions`, {
@@ -59,11 +85,13 @@ export async function createSession(prompt: string, filePath?: string): Promise<
 export async function createSessionWithRetry(
   prompt: string,
   filePath?: string,
-  maxRetries: number = 3
+  maxRetries: number = 3,
+  structuredOutputSchema?: Record<string, unknown>,
+  repoFullName?: string
 ): Promise<CreateSessionResponse> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await createSession(prompt, filePath);
+      const response = await createSession(prompt, filePath, structuredOutputSchema, repoFullName);
       return response;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);

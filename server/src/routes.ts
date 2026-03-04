@@ -7,19 +7,27 @@ import { startNextBatch, getRepoConfig } from './worker/batch-progression';
 
 const router = Router();
 
+function getCurrentRepoId(): string | null {
+  const config = getRepoConfig();
+  return config?.repoId ?? null;
+}
+
 // GET /api/stats
 router.get('/stats', (_req: Request, res: Response) => {
   const db = getDb();
+  const repoId = getCurrentRepoId();
 
-  const totalFiles = (db.prepare('SELECT COUNT(*) as count FROM files').get() as { count: number }).count;
+  const filesFilter = repoId ? ' WHERE repo_id = ?' : ' WHERE 1=0';
+  const filesParams = repoId ? [repoId] : [];
+  const totalFiles = (db.prepare('SELECT COUNT(*) as count FROM files' + filesFilter).get(...filesParams) as { count: number }).count;
 
-  const statusRows = db.prepare('SELECT status, COUNT(*) as count FROM files GROUP BY status').all() as { status: string; count: number }[];
+  const statusRows = db.prepare('SELECT status, COUNT(*) as count FROM files' + filesFilter + ' GROUP BY status').all(...filesParams) as { status: string; count: number }[];
   const byStatus: Record<string, number> = {};
   for (const row of statusRows) {
     byStatus[row.status] = row.count;
   }
 
-  const complexityRows = db.prepare('SELECT complexity, COUNT(*) as count FROM files GROUP BY complexity').all() as { complexity: string; count: number }[];
+  const complexityRows = db.prepare('SELECT complexity, COUNT(*) as count FROM files' + filesFilter + ' GROUP BY complexity').all(...filesParams) as { complexity: string; count: number }[];
   const byComplexity: Record<string, number> = {};
   for (const row of complexityRows) {
     byComplexity[row.complexity] = row.count;
@@ -28,10 +36,11 @@ router.get('/stats', (_req: Request, res: Response) => {
   const mergedCount = byStatus['merged'] || 0;
   const progressPercent = totalFiles > 0 ? Math.round((mergedCount / totalFiles) * 1000) / 10 : 0;
 
-  // Session duration stats
-  const durationRow = db.prepare(
-    "SELECT SUM(duration_seconds) as total, COUNT(*) as count FROM devin_sessions WHERE duration_seconds IS NOT NULL"
-  ).get() as { total: number | null; count: number };
+  const durationQuery = repoId
+    ? "SELECT SUM(duration_seconds) as total, COUNT(*) as count FROM devin_sessions WHERE repo_id = ? AND duration_seconds IS NOT NULL"
+    : "SELECT 0 as total, 0 as count";
+  const durationParams = repoId ? [repoId] : [];
+  const durationRow = db.prepare(durationQuery).get(...durationParams) as { total: number | null; count: number };
 
   const rateLimit = getRateLimitInfo();
   const config = getRepoConfig();
@@ -41,8 +50,8 @@ router.get('/stats', (_req: Request, res: Response) => {
     byStatus,
     byComplexity,
     progressPercent,
-    totalSessionDurationSeconds: durationRow.total || 0,
-    sessionCount: durationRow.count,
+    totalSessionDurationSeconds: durationRow?.total || 0,
+    sessionCount: durationRow?.count || 0,
     rateLimit,
     repoConfig: config,
     devinConfigured: isDevinConfigured(),
@@ -53,16 +62,22 @@ router.get('/stats', (_req: Request, res: Response) => {
 // GET /api/files
 router.get('/files', (req: Request, res: Response) => {
   const db = getDb();
+  const repoId = getCurrentRepoId();
   const { status, sort } = req.query;
+
+  if (!repoId) {
+    res.json([]);
+    return;
+  }
 
   let query = `SELECT f.*,
     (SELECT duration_seconds FROM devin_sessions WHERE file_id = f.id AND duration_seconds IS NOT NULL ORDER BY started_at DESC LIMIT 1) as session_duration,
     (SELECT devin_url FROM devin_sessions WHERE file_id = f.id ORDER BY started_at DESC LIMIT 1) as devin_url
-  FROM files f`;
-  const params: string[] = [];
+  FROM files f WHERE f.repo_id = ?`;
+  const params: string[] = [repoId];
 
   if (status && typeof status === 'string') {
-    query += ' WHERE f.status = ?';
+    query += ' AND f.status = ?';
     params.push(status);
   }
 
@@ -105,7 +120,7 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
     return;
   }
 
-  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as { id: string; path: string; status: string } | undefined;
+  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as { id: string; path: string; status: string; repo_id: string | null } | undefined;
   if (!file) {
     res.status(404).json({ error: 'File not found' });
     return;
@@ -114,12 +129,13 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
   const oldStatus = file.status;
   db.prepare("UPDATE files SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, fileId);
 
-  db.prepare("INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))").run(
+  db.prepare("INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))").run(
     fileId,
     file.path,
     oldStatus,
     status,
-    `${file.path} → ${capitalize(status)}`
+    `${file.path} → ${capitalize(status)}`,
+    file.repo_id ?? null
   );
 
   const updated = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
@@ -129,7 +145,10 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
 // GET /api/batches
 router.get('/batches', (_req: Request, res: Response) => {
   const db = getDb();
-  const batches = db.prepare('SELECT * FROM batches ORDER BY started_at DESC').all();
+  const repoId = getCurrentRepoId();
+  const batches = repoId
+    ? db.prepare('SELECT * FROM batches WHERE repo_id = ? ORDER BY started_at DESC').all(repoId)
+    : [];
   res.json(batches);
 });
 
@@ -164,7 +183,7 @@ router.post('/batches/:id/resume', (_req: Request, res: Response) => {
   const db = getDb();
   const batchId = _req.params.id;
 
-  const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId) as { id: string; status: string } | undefined;
+  const batch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId) as { id: string; status: string; repo_id: string | null } | undefined;
   if (!batch) {
     res.status(404).json({ error: 'Batch not found' });
     return;
@@ -179,8 +198,8 @@ router.post('/batches/:id/resume', (_req: Request, res: Response) => {
   db.prepare("UPDATE batches SET status = 'running' WHERE id = ?").run(batchId);
 
   db.prepare(
-    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, created_at) VALUES (NULL, NULL, 'halted', 'running', ?, datetime('now'))"
-  ).run(`Batch ${batchId} resumed by user`);
+    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (NULL, NULL, 'halted', 'running', ?, ?, datetime('now'))"
+  ).run(`Batch ${batchId} resumed by user`, batch.repo_id ?? null);
 
   res.json({ ok: true, batchId, status: 'running' });
 });
@@ -201,7 +220,10 @@ router.get('/batches/:id/files', (req: Request, res: Response) => {
 // GET /api/activity
 router.get('/activity', (_req: Request, res: Response) => {
   const db = getDb();
-  const activity = db.prepare('SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 20').all();
+  const repoId = getCurrentRepoId();
+  const activity = repoId
+    ? db.prepare('SELECT * FROM activity_log WHERE repo_id = ? ORDER BY created_at DESC LIMIT 20').all(repoId)
+    : [];
   res.json(activity);
 });
 

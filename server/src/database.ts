@@ -109,6 +109,71 @@ function runMigrations(): void {
   } catch {
     try { db.exec("ALTER TABLE repo_config ADD COLUMN auto_progress INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
   }
+
+  // Per-repo persistence: add repos table and repo_id columns
+  migrateToPerRepoSchema();
+}
+
+function migrateToPerRepoSchema(): void {
+  // Create repos table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS repos (
+      id TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      branch TEXT NOT NULL,
+      analyzed_at TEXT,
+      auto_progress INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Add repo_id to repo_config (which repo is currently viewed)
+  try {
+    db.prepare("SELECT repo_id FROM repo_config LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE repo_config ADD COLUMN repo_id TEXT"); } catch { /* already exists */ }
+  }
+
+  // Add repo_id to files, batches, devin_sessions, activity_log
+  for (const table of ['files', 'batches', 'devin_sessions', 'activity_log']) {
+    try {
+      db.prepare(`SELECT repo_id FROM ${table} LIMIT 0`).get();
+    } catch {
+      try { db.exec(`ALTER TABLE ${table} ADD COLUMN repo_id TEXT`); } catch { /* already exists */ }
+    }
+  }
+
+  // Backfill repo_id for existing data (single-repo migration)
+  const config = db.prepare("SELECT owner, repo, branch, auto_progress FROM repo_config WHERE id = 1").get() as
+    | { owner: string; repo: string; branch: string; auto_progress: number }
+    | undefined;
+
+  if (config && config.owner && config.repo) {
+    const repoId = `${config.owner}/${config.repo}:${config.branch}`;
+    db.prepare("INSERT OR IGNORE INTO repos (id, owner, repo, branch, auto_progress) VALUES (?, ?, ?, ?, ?)").run(
+      repoId,
+      config.owner,
+      config.repo,
+      config.branch,
+      config.auto_progress ?? 0
+    );
+    db.prepare("UPDATE repo_config SET repo_id = ? WHERE id = 1").run(repoId);
+    db.prepare("UPDATE files SET repo_id = ? WHERE repo_id IS NULL").run(repoId);
+    db.prepare("UPDATE batches SET repo_id = ? WHERE repo_id IS NULL").run(repoId);
+    db.prepare("UPDATE devin_sessions SET repo_id = ? WHERE repo_id IS NULL").run(repoId);
+    db.prepare("UPDATE activity_log SET repo_id = ? WHERE repo_id IS NULL").run(repoId);
+
+    // Migrate file ids to repo_id::path for multi-repo support (only legacy path-only ids)
+    const legacyFiles = db.prepare("SELECT id, repo_id, path FROM files WHERE id NOT LIKE '%::%' AND repo_id IS NOT NULL").all() as
+      { id: string; repo_id: string; path: string }[];
+    for (const f of legacyFiles) {
+      const newId = `${f.repo_id}::${f.path}`;
+      db.prepare("UPDATE devin_sessions SET file_id = ? WHERE file_id = ? AND (repo_id = ? OR repo_id IS NULL)").run(newId, f.id, f.repo_id);
+      db.prepare("UPDATE activity_log SET file_id = ? WHERE file_id = ? AND (repo_id = ? OR repo_id IS NULL)").run(newId, f.id, f.repo_id);
+      db.prepare("UPDATE files SET id = ? WHERE id = ?").run(newId, f.id);
+    }
+  }
 }
 
 export function logError(source: string, message: string, details?: string): void {

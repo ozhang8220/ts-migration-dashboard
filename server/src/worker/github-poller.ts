@@ -2,7 +2,8 @@ import { getDb, logError } from '../database';
 import { githubFetch } from '../github/api';
 import { checkBatchProgression, updateFileStatus, getRepoConfig, shouldHaltBatch } from './batch-progression';
 
-const POLL_INTERVAL_MS = 120_000; // 2 minutes (reduced — webhooks are primary)
+const POLL_INTERVAL_MS = 120_000; // 2 minutes for merged-PR check
+const SYNC_IN_PROGRESS_INTERVAL_MS = 30_000; // 30 seconds — detect new PRs for in_progress files
 
 interface FileRow {
   id: string;
@@ -12,18 +13,77 @@ interface FileRow {
   batch_id: string | null;
 }
 
+/** Branch name for a file: ts-migrate/src-utils-foo -> src/utils/foo.js */
+function pathToBranch(path: string): string {
+  return `ts-migrate/${path.replace(/\//g, '-').replace(/\.(js|jsx)$/, '')}`;
+}
+
+/**
+ * Sync in_progress/queued files with GitHub open PRs.
+ * When Devin creates a PR, the Devin API may not return it — so we detect via GitHub.
+ */
+async function syncInProgressWithPRs(): Promise<void> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+
+  const db = getDb();
+  const config = getRepoConfig();
+  const repoId = config?.repoId;
+  if (!repoId) return;
+
+  const owner = config.owner || process.env.GITHUB_OWNER || 'ozhang8220';
+  const repo = config.repo || process.env.GITHUB_REPO || 'shopdirect-frontend';
+  const branch = config.branch || 'main';
+
+  const inProgressFiles = db.prepare(
+    "SELECT * FROM files WHERE status IN ('in_progress', 'queued') AND repo_id = ?"
+  ).all(repoId) as FileRow[];
+
+  if (inProgressFiles.length === 0) return;
+
+  try {
+    const prs = await githubFetch(
+      `/repos/${owner}/${repo}/pulls?state=open&base=${encodeURIComponent(branch)}&per_page=100`
+    ).then((r) => r.json()) as Array<{ number: number; html_url: string; head: { ref: string } }>;
+
+    const branchToFile = new Map<string, FileRow>();
+    for (const f of inProgressFiles) {
+      branchToFile.set(pathToBranch(f.path), f);
+    }
+
+    for (const pr of prs) {
+      const headRef = pr.head.ref;
+      const file = branchToFile.get(headRef);
+      if (file) {
+        console.log(`[github-poller] Found PR #${pr.number} for in_progress file ${file.path} — syncing to Ready for Review`);
+        db.prepare(
+          "UPDATE devin_sessions SET pr_url = ?, pr_number = ?, status = 'completed', completed_at = datetime('now') WHERE file_id = ?"
+        ).run(pr.html_url, pr.number, file.id);
+        updateFileStatus(file.id, 'pr_open', undefined, pr.html_url, pr.number);
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[github-poller] syncInProgressWithPRs error:', msg);
+    logError('github_poller', 'syncInProgressWithPRs error', msg);
+  }
+}
+
 async function pollGitHubPRs(): Promise<void> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) return;
 
   const db = getDb();
   const config = getRepoConfig();
-  const owner = config?.owner || process.env.GITHUB_OWNER || 'ozhang8220';
-  const repo = config?.repo || process.env.GITHUB_REPO || 'shopdirect-frontend';
+  const repoId = config?.repoId;
+  if (!repoId) return;
+
+  const owner = config.owner || process.env.GITHUB_OWNER || 'ozhang8220';
+  const repo = config.repo || process.env.GITHUB_REPO || 'shopdirect-frontend';
 
   const openPRFiles = db.prepare(
-    "SELECT * FROM files WHERE status = 'pr_open' AND pr_number IS NOT NULL"
-  ).all() as FileRow[];
+    "SELECT * FROM files WHERE status = 'pr_open' AND pr_number IS NOT NULL AND repo_id = ?"
+  ).all(repoId) as FileRow[];
 
   if (openPRFiles.length === 0) return;
 
@@ -64,6 +124,7 @@ async function pollGitHubPRs(): Promise<void> {
 }
 
 let pollerInterval: ReturnType<typeof setInterval> | null = null;
+let syncInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startGitHubPoller(): void {
   if (pollerInterval) {
@@ -71,7 +132,7 @@ export function startGitHubPoller(): void {
     return;
   }
 
-  console.log(`[github-poller] Starting poller (every ${POLL_INTERVAL_MS / 1000}s — fallback, webhooks are primary)`);
+  console.log(`[github-poller] Starting poller (merged check every ${POLL_INTERVAL_MS / 1000}s, in_progress sync every ${SYNC_IN_PROGRESS_INTERVAL_MS / 1000}s)`);
   pollerInterval = setInterval(() => {
     pollGitHubPRs().catch((err) => {
       console.error('[github-poller] Unhandled error in poller:', err);
@@ -79,8 +140,14 @@ export function startGitHubPoller(): void {
     });
   }, POLL_INTERVAL_MS);
 
+  syncInterval = setInterval(() => {
+    syncInProgressWithPRs().catch((err) => {
+      console.error('[github-poller] syncInProgress error:', err);
+    });
+  }, SYNC_IN_PROGRESS_INTERVAL_MS);
+
   // Run immediately on start
-  pollGitHubPRs().catch((err) => {
+  Promise.all([syncInProgressWithPRs(), pollGitHubPRs()]).catch((err) => {
     console.error('[github-poller] Unhandled error in initial poll:', err);
   });
 }
@@ -89,6 +156,10 @@ export function stopGitHubPoller(): void {
   if (pollerInterval) {
     clearInterval(pollerInterval);
     pollerInterval = null;
-    console.log('[github-poller] Poller stopped');
   }
+  if (syncInterval) {
+    clearInterval(syncInterval);
+    syncInterval = null;
+  }
+  console.log('[github-poller] Poller stopped');
 }

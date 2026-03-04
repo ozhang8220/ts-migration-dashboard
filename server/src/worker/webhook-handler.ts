@@ -5,11 +5,13 @@ import { updateFileStatus, checkBatchProgression, shouldHaltBatch } from './batc
 
 interface PullRequestPayload {
   action: string;
+  repository: { full_name: string };
   pull_request: {
     number: number;
     merged: boolean;
     state: string;
     html_url: string;
+    base: { ref: string };
   };
 }
 
@@ -75,11 +77,12 @@ export async function handleGitHubWebhook(req: Request, res: Response): Promise<
 
     console.log(`[webhook] PR #${prNumber} action: ${action}`);
 
-    // Find the file associated with this PR
+    // Find the file associated with this PR (filter by repo)
     const db = getDb();
+    const repoId = `${payload.repository.full_name}:${payload.pull_request.base.ref}`;
     const file = db.prepare(
-      "SELECT * FROM files WHERE pr_number = ?"
-    ).get(prNumber) as { id: string; path: string; status: string; batch_id: string | null } | undefined;
+      "SELECT * FROM files WHERE pr_number = ? AND repo_id = ?"
+    ).get(prNumber, repoId) as { id: string; path: string; status: string; batch_id: string | null } | undefined;
 
     if (!file) {
       res.status(200).json({ ignored: true, reason: 'PR not tracked' });
