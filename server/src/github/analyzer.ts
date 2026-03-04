@@ -51,18 +51,29 @@ const EXCLUDE_PATTERNS = [
   /tests\//,
   /\.stories\./,
   /\.d\.ts$/,
+  /test-setup\.(js|jsx)$/i,
 ];
 
-function shouldInclude(filePath: string): boolean {
+/** Only include source dirs: utils, components, hooks, services, and root app files */
+const INCLUDE_DIRS = ['src/utils/', 'src/components/', 'src/hooks/', 'src/services/'];
+
+function isIncludedSourcePath(filePath: string): boolean {
   if (!filePath.startsWith('src/')) return false;
+  const afterSrc = filePath.slice(4); // after "src/"
+  if (!afterSrc.includes('/')) return true; // root: src/App.js, src/index.js
+  return INCLUDE_DIRS.some(d => filePath.startsWith(d));
+}
+
+function shouldInclude(filePath: string): boolean {
   if (!/\.(js|jsx)$/.test(filePath)) return false;
+  if (!isIncludedSourcePath(filePath)) return false;
   return !EXCLUDE_PATTERNS.some(p => p.test(filePath));
 }
 
-/** Check if path is a converted .ts/.tsx under src/ (exclude tests) */
+/** Check if path is a converted .ts/.tsx under src/ (exclude tests, same dirs as shouldInclude) */
 function isConvertedTsFile(filePath: string): boolean {
-  if (!filePath.startsWith('src/')) return false;
   if (!/\.(ts|tsx)$/.test(filePath)) return false;
+  if (!isIncludedSourcePath(filePath)) return false;
   return !EXCLUDE_PATTERNS.some(p => p.test(filePath));
 }
 
@@ -106,24 +117,30 @@ function detectJsx(content: string): boolean {
 }
 
 function classifyComplexity(loc: number, content: string, hasJsx: boolean): 'low' | 'medium' | 'high' {
-  // Dynamic pattern detection for HIGH complexity
+  // Dynamic pattern detection for HIGH complexity (stricter — avoid false positives)
   const dynamicPatterns = [
-    /\[[\w]+\]/,               // computed property access [variable]
-    /\.reduce\s*\(/,           // .reduce( on arrays (potential function composition)
-    /typeof\s+\w+\s*===?\s*['"]function['"]/,  // typeof plugin === 'function'
+    /\[\s*[a-zA-Z_$][a-zA-Z0-9_$]{1,}\s*\]/,  // obj[variable] — 2+ char identifier (excludes arr[i] loop index)
+    /\.reduce\s*\(\s*\([^)]*\)\s*=>\s*\([^)]*\)\s*=>/,  // .reduce with function composition (curried)
+    /typeof\s+\w+\s*===?\s*['"]function['"]/,  // typeof plugin === 'function' (plugin checks)
     /eval\s*\(/,               // eval()
     /new\s+Function\s*\(/,     // new Function()
     /Object\.defineProperty/,  // monkey-patching
     /Object\.assign\s*\(\s*\w+\.prototype/,  // prototype extension
-    /history\.\w+\s*=/,        // history override
     /Proxy\s*\(/,              // Proxy usage
-    /Symbol\./,                // Symbol usage for meta-programming
+    /Symbol\.(for|iterator|toStringTag|asyncIterator)\s*\(/,  // meta-programming Symbols
+    /\b(registerPlugin|addPlugin|createPlugin|\.plugin\s*\()/,  // plugin/factory patterns
   ];
 
   const hasDynamicPatterns = dynamicPatterns.some(p => p.test(content));
 
+  // React hooks/components for Medium
+  const hasReactHooks = /\buse[A-Z][a-zA-Z]*\s*\(/.test(content);
+
+  // High: over 250 lines, OR contains dynamic patterns
   if (loc > 250 || hasDynamicPatterns) return 'high';
-  if (loc >= 100 || hasJsx) return 'medium';
+  // Medium: 100-250 lines, OR contains React hooks/components
+  if (loc >= 100 || hasJsx || hasReactHooks) return 'medium';
+  // Low: under 100 lines AND no dynamic patterns
   return 'low';
 }
 
