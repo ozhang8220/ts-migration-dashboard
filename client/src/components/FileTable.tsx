@@ -135,6 +135,7 @@ export default function FileTable({ files }: Props) {
               <SortHeader field="dep_depth">Priority</SortHeader>
               <SortHeader field="loc">Lines</SortHeader>
               <SortHeader field="status" className="min-w-[160px]">Status</SortHeader>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Assignee</th>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">PR Link</th>
               <th
                 className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider"
@@ -169,6 +170,9 @@ export default function FileTable({ files }: Props) {
                     >
                       {statusCfg.label}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-[#6B7280]">
+                    {file.assignee || <span className="text-[#D1D5DB]">{"\u2014"}</span>}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     {file.pr_url ? (

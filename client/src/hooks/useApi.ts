@@ -54,10 +54,10 @@ export function useDashboardData() {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  const startBatch = useCallback(async (batchSize: number): Promise<BatchResponse> => {
+  const startBatch = useCallback(async (batchSize: number, assignee?: string): Promise<BatchResponse> => {
     const result = await fetchJson<BatchResponse>('/batches', {
       method: 'POST',
-      body: JSON.stringify({ batchSize }),
+      body: JSON.stringify({ batchSize, assignee }),
     });
     await refresh();
     return result;

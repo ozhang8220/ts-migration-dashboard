@@ -13,6 +13,7 @@ export interface MigrationFile {
   batch_id: string | null;
   pr_url: string | null;
   pr_number: number | null;
+  assignee: string | null;
   error_reason: string | null;
   created_at: string;
   updated_at: string;

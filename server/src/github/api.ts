@@ -47,7 +47,7 @@ function isRateLimited(): boolean {
   return false;
 }
 
-export async function githubFetch(urlPath: string): Promise<Response> {
+export async function githubFetch(urlPath: string, init: RequestInit = {}): Promise<Response> {
   const token = getGitHubToken();
   if (!token) {
     throw new Error('GITHUB_TOKEN not configured');
@@ -59,11 +59,14 @@ export async function githubFetch(urlPath: string): Promise<Response> {
 
   const url = urlPath.startsWith('https://') ? urlPath : `https://api.github.com${urlPath}`;
 
+  const extraHeaders = (init.headers || {}) as Record<string, string>;
   const response = await fetch(url, {
+    ...init,
     headers: {
       'Authorization': `Bearer ${token}`,
       'Accept': 'application/vnd.github.v3+json',
       'User-Agent': 'ts-migration-dashboard',
+      ...extraHeaders,
     },
   });
 
@@ -81,6 +84,23 @@ export async function githubFetch(urlPath: string): Promise<Response> {
 export async function githubFetchJson<T>(urlPath: string): Promise<T> {
   const response = await githubFetch(urlPath);
   return response.json() as Promise<T>;
+}
+
+export async function assignPullRequestAssignee(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  assignee: string
+): Promise<void> {
+  if (!assignee?.trim()) return;
+
+  await githubFetch(`/repos/${owner}/${repo}/issues/${prNumber}/assignees`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ assignees: [assignee.trim()] }),
+  });
 }
 
 export function isGitHubConfigured(): boolean {

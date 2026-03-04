@@ -1,6 +1,7 @@
 import { getDb, logError } from '../database';
 import { getSession, isDevinConfigured } from '../devin/client';
-import { updateFileStatus, shouldHaltBatch } from './batch-progression';
+import { assignPullRequestAssignee, githubFetchJson } from '../github/api';
+import { updateFileStatus, shouldHaltBatch, getRepoConfig } from './batch-progression';
 
 const POLL_INTERVAL_MS = 15_000; // 15 seconds — faster updates when Devin creates PRs
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -12,6 +13,26 @@ interface DevinSessionRow {
   batch_id: string | null;
   status: string;
   started_at: string | null;
+}
+
+interface FileAssignmentRow {
+  assignee: string | null;
+}
+
+interface PullRequestDetails {
+  body: string | null;
+}
+
+function hasNeedsHumanIndicators(prBody: string | null | undefined): boolean {
+  if (!prBody) return false;
+  const normalized = prBody.toLowerCase();
+  return (
+    normalized.includes('todo') ||
+    normalized.includes('partial') ||
+    normalized.includes('needs human') ||
+    normalized.includes('needs manual') ||
+    prBody.includes('⚠')
+  );
 }
 
 function computeDurationSeconds(startedAt: string | null): number | null {
@@ -92,7 +113,39 @@ async function pollDevinSessions(): Promise<void> {
           "UPDATE devin_sessions SET status = 'completed', completed_at = datetime('now'), pr_url = ?, pr_number = ?, duration_seconds = ? WHERE id = ?"
         ).run(prUrl, prNumber, duration, session.id);
 
-        updateFileStatus(session.file_id, 'pr_open', undefined, prUrl || undefined, prNumber ?? undefined);
+        let nextStatus: 'pr_open' | 'needs_human' = 'pr_open';
+        if (prNumber) {
+          // If PR body suggests partial/manual work, route to Feedback Needed.
+          try {
+            const config = getRepoConfig();
+            const owner = config?.owner || process.env.GITHUB_OWNER;
+            const repo = config?.repo || process.env.GITHUB_REPO;
+            if (owner && repo) {
+              const pr = await githubFetchJson<PullRequestDetails>(`/repos/${owner}/${repo}/pulls/${prNumber}`);
+              if (hasNeedsHumanIndicators(pr.body)) {
+                nextStatus = 'needs_human';
+              }
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`[devin-poller] Failed to inspect PR #${prNumber} body, defaulting to Ready for Review: ${msg}`);
+          }
+        }
+
+        updateFileStatus(session.file_id, nextStatus, undefined, prUrl || undefined, prNumber ?? undefined);
+        if (prNumber) {
+          const config = getRepoConfig();
+          const assignment = db.prepare('SELECT assignee FROM files WHERE id = ?').get(session.file_id) as FileAssignmentRow | undefined;
+          if (config?.owner && config.repo && assignment?.assignee) {
+            try {
+              await assignPullRequestAssignee(config.owner, config.repo, prNumber, assignment.assignee);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.warn(`[devin-poller] Failed to assign PR #${prNumber} to ${assignment.assignee}: ${msg}`);
+              logError('devin_poller', `Failed to assign PR #${prNumber} to ${assignment.assignee}`, msg);
+            }
+          }
+        }
 
         // Note: We do NOT increment batch.completed here — that happens in the
         // github-poller when the PR is actually merged. This avoids double-counting.

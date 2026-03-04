@@ -156,12 +156,19 @@ router.get('/batches', (_req: Request, res: Response) => {
 router.post('/batches', async (req: Request, res: Response) => {
   try {
     const batchSize = req.body.batchSize || 5;
+    const assigneeRaw = typeof req.body.assignee === 'string' ? req.body.assignee.trim() : '';
+    const assignee = assigneeRaw.length > 0 ? assigneeRaw : undefined;
+    const githubUsernameRegex = /^[a-zA-Z0-9](?:-?[a-zA-Z0-9]){0,38}$/;
+    if (assignee && !githubUsernameRegex.test(assignee)) {
+      res.status(400).json({ error: 'Invalid assignee. Use a valid GitHub username.' });
+      return;
+    }
 
     if (!isDevinConfigured()) {
       // Still allow batch creation without Devin (files go to queued state)
     }
 
-    const result = await startNextBatch(batchSize);
+    const result = await startNextBatch(batchSize, assignee);
     const db = getDb();
     const files = db.prepare('SELECT * FROM files WHERE batch_id = ?').all(result.batchId);
 

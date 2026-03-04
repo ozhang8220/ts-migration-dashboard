@@ -27,6 +27,7 @@ function initializeSchema(): void {
       id TEXT PRIMARY KEY,
       path TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
+      assignee TEXT,
       complexity TEXT DEFAULT 'low',
       loc INTEGER,
       import_count INTEGER DEFAULT 0,
@@ -108,6 +109,13 @@ function runMigrations(): void {
     db.prepare("SELECT auto_progress FROM repo_config LIMIT 0").get();
   } catch {
     try { db.exec("ALTER TABLE repo_config ADD COLUMN auto_progress INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  }
+
+  // Add assignee to files if missing
+  try {
+    db.prepare("SELECT assignee FROM files LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE files ADD COLUMN assignee TEXT"); } catch { /* already exists */ }
   }
 
   // Per-repo persistence: add repos table and repo_id columns

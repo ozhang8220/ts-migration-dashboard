@@ -1,5 +1,5 @@
 import { getDb, logError } from '../database';
-import { githubFetch } from '../github/api';
+import { assignPullRequestAssignee, githubFetch } from '../github/api';
 import { checkBatchProgression, updateFileStatus, getRepoConfig, shouldHaltBatch } from './batch-progression';
 
 const POLL_INTERVAL_MS = 120_000; // 2 minutes for merged-PR check
@@ -9,6 +9,7 @@ interface FileRow {
   id: string;
   path: string;
   status: string;
+  assignee?: string | null;
   pr_number: number;
   batch_id: string | null;
 }
@@ -60,6 +61,15 @@ async function syncInProgressWithPRs(): Promise<void> {
           "UPDATE devin_sessions SET pr_url = ?, pr_number = ?, status = 'completed', completed_at = datetime('now') WHERE file_id = ?"
         ).run(pr.html_url, pr.number, file.id);
         updateFileStatus(file.id, 'pr_open', undefined, pr.html_url, pr.number);
+        if (file.assignee) {
+          try {
+            await assignPullRequestAssignee(owner, repo, pr.number, file.assignee);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`[github-poller] Failed to assign PR #${pr.number} to ${file.assignee}: ${msg}`);
+            logError('github_poller', `Failed to assign PR #${pr.number} to ${file.assignee}`, msg);
+          }
+        }
       }
     }
   } catch (err) {

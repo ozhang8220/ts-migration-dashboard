@@ -9,6 +9,7 @@ interface FileRow {
   id: string;
   path: string;
   status: string;
+  assignee?: string | null;
   loc: number;
   complexity: string;
   imported_by: number;
@@ -216,7 +217,10 @@ export async function checkBatchProgression(): Promise<void> {
 /**
  * Start a new batch of pending files.
  */
-export async function startNextBatch(batchSize: number): Promise<{
+export async function startNextBatch(
+  batchSize: number,
+  assignee?: string | null
+): Promise<{
   batchId: string;
   filesQueued: number;
   devinEnabled: boolean;
@@ -227,6 +231,7 @@ export async function startNextBatch(batchSize: number): Promise<{
   if (!repoId) {
     throw new Error('No repository selected. Analyze a repo first.');
   }
+  const normalizedAssignee = assignee?.trim() || null;
 
   const { isDevinConfigured } = await import('../devin/client');
   const devinEnabled = isDevinConfigured();
@@ -248,9 +253,13 @@ export async function startNextBatch(batchSize: number): Promise<{
   const insertBatch = db.prepare(
     "INSERT INTO batches (id, repo_id, status, total_files, started_at) VALUES (?, ?, 'running', ?, datetime('now'))"
   );
-  const updateFileQueued = db.prepare(
-    "UPDATE files SET status = 'queued', batch_id = ?, updated_at = datetime('now') WHERE id = ?"
-  );
+  const updateFileQueued = normalizedAssignee
+    ? db.prepare(
+      "UPDATE files SET status = 'queued', batch_id = ?, assignee = ?, updated_at = datetime('now') WHERE id = ?"
+    )
+    : db.prepare(
+      "UPDATE files SET status = 'queued', batch_id = ?, updated_at = datetime('now') WHERE id = ?"
+    );
   const insertActivity = db.prepare(
     "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
   );
@@ -258,7 +267,11 @@ export async function startNextBatch(batchSize: number): Promise<{
   const transaction = db.transaction(() => {
     insertBatch.run(batchId, repoId, pendingFiles.length);
     for (const file of pendingFiles) {
-      updateFileQueued.run(batchId, file.id);
+      if (normalizedAssignee) {
+        updateFileQueued.run(batchId, normalizedAssignee, file.id);
+      } else {
+        updateFileQueued.run(batchId, file.id);
+      }
       insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} → Queued (Batch ${batchId})`, repoId);
     }
   });

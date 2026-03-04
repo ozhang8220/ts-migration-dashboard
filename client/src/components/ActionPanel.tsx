@@ -4,7 +4,7 @@ import type { Batch, BatchResponse, MigrationFile } from '../types';
 interface Props {
   batches: Batch[];
   autoProgress: boolean;
-  onStartBatch: (batchSize: number) => Promise<BatchResponse>;
+  onStartBatch: (batchSize: number, assignee?: string) => Promise<BatchResponse>;
   onToggleAutoProgress: (enabled: boolean) => Promise<void>;
   onResumeBatch: (batchId: string) => Promise<void>;
   onGetBatchFiles: (batchId: string) => Promise<MigrationFile[]>;
@@ -38,6 +38,7 @@ function getDisplayFilename(path: string, status: string): string {
 
 export default function ActionPanel({ batches, autoProgress, onStartBatch, onToggleAutoProgress, onResumeBatch, onGetBatchFiles }: Props) {
   const [batchSize, setBatchSize] = useState(5);
+  const [assignee, setAssignee] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [lastResult, setLastResult] = useState<BatchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +53,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
     setIsStarting(true);
     setError(null);
     try {
-      const result = await onStartBatch(batchSize);
+      const result = await onStartBatch(batchSize, assignee.trim() || undefined);
       setLastResult(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start batch');
@@ -131,6 +132,14 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         >
           {isStarting ? 'Starting...' : 'Start Batch'}
         </button>
+
+        <input
+          type="text"
+          value={assignee}
+          onChange={(e) => setAssignee(e.target.value)}
+          placeholder="Assignee (GitHub username)"
+          className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[220px]"
+        />
 
         <div className="flex items-center gap-2 ml-auto">
           <label className="text-xs text-[#6B7280]">Auto</label>
