@@ -86,7 +86,7 @@ async function pollDevinSessions(): Promise<void> {
       // Devin API may use status_enum or status
       const isFinished =
         sessionData.status_enum === 'finished' ||
-        (sessionData as Record<string, unknown>).status === 'finished';
+        sessionData.status === 'finished';
 
       if (isFinished) {
         console.log(`[devin-poller] Session ${session.devin_session_id} finished`);

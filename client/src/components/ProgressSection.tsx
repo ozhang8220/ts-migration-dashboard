@@ -10,6 +10,7 @@ const statusCards = [
   { key: 'merged', label: 'Completed', bg: 'bg-[#DCFCE7]', text: 'text-[#16A34A]', count: 'text-[#16A34A]' },
   { key: 'pr_open', label: 'Ready for Review', bg: 'bg-[#FEF3C7]', text: 'text-[#D97706]', count: 'text-[#D97706]' },
   { key: 'needs_human', label: 'Feedback Needed', bg: 'bg-[#FED7AA]', text: 'text-[#EA580C]', count: 'text-[#EA580C]' },
+  { key: 'revision_needed', label: 'Revision Needed', bg: 'bg-[#EDE9FE]', text: 'text-[#7C3AED]', count: 'text-[#7C3AED]' },
   { key: 'in_progress', label: 'In Progress', bg: 'bg-[#DBEAFE]', text: 'text-[#2563EB]', count: 'text-[#2563EB]' },
   { key: 'pending', label: 'Waiting', bg: 'bg-[#F3F4F6]', text: 'text-[#6B7280]', count: 'text-[#6B7280]' },
 ];
@@ -95,7 +96,7 @@ export default function ProgressSection({ stats, files }: Props) {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-5 gap-4" ref={dropdownRef}>
+      <div className="grid grid-cols-6 gap-4" ref={dropdownRef}>
         {statusCards.map((card) => {
           const cardCount = byStatus[card.key] || 0;
           const isExpanded = expandedCard === card.key;
@@ -144,6 +145,11 @@ export default function ProgressSection({ stats, files }: Props) {
                           )}
                         </span>
                       </div>
+                      {file.status === 'revision_needed' && file.reviewer_feedback && (
+                        <p className="text-[11px] text-[#6B7280] mt-1 truncate" title={file.reviewer_feedback}>
+                          {file.reviewer_feedback.slice(0, 100)}{file.reviewer_feedback.length > 100 ? '...' : ''}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

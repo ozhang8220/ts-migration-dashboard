@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Stats, MigrationFile, Batch, ActivityEntry, BatchResponse, ErrorLogEntry, AnalysisResult } from '../types';
+import type { Stats, MigrationFile, Batch, ActivityEntry, BatchResponse, ErrorLogEntry, AnalysisResult, RepoInfo, BatchType } from '../types';
 
 const API_BASE = '/api';
 
@@ -54,10 +54,10 @@ export function useDashboardData() {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  const startBatch = useCallback(async (batchSize: number, assignee?: string): Promise<BatchResponse> => {
+  const startBatch = useCallback(async (batchSize: number, assignee?: string, batchType?: BatchType): Promise<BatchResponse> => {
     const result = await fetchJson<BatchResponse>('/batches', {
       method: 'POST',
-      body: JSON.stringify({ batchSize, assignee }),
+      body: JSON.stringify({ batchSize, assignee, batchType }),
     });
     await refresh();
     return result;
@@ -99,6 +99,26 @@ export function useDashboardData() {
     return fetchJson<MigrationFile[]>(`/batches/${batchId}/files`);
   }, []);
 
+  const getRepos = useCallback(async (): Promise<RepoInfo[]> => {
+    return fetchJson<RepoInfo[]>('/repos');
+  }, []);
+
+  const archiveRepo = useCallback(async (repoId: string): Promise<void> => {
+    await fetchJson(`/repos/${repoId}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived: true }),
+    });
+    await refresh();
+  }, [refresh]);
+
+  const restoreRepo = useCallback(async (repoId: string): Promise<void> => {
+    await fetchJson(`/repos/${repoId}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived: false }),
+    });
+    await refresh();
+  }, [refresh]);
+
   return {
     stats,
     files,
@@ -115,5 +135,8 @@ export function useDashboardData() {
     toggleAutoProgress,
     resumeBatch,
     getBatchFiles,
+    getRepos,
+    archiveRepo,
+    restoreRepo,
   };
 }

@@ -13,6 +13,7 @@ const statusConfig: Record<FileStatus, { label: string; classes: string; tooltip
   pr_open: { label: 'Ready for Review', classes: 'bg-[#FEF3C7] text-[#D97706]', tooltip: 'PR is open — ready to review and merge' },
   merged: { label: 'Completed', classes: 'bg-[#DCFCE7] text-[#16A34A]', tooltip: 'PR merged, conversion complete' },
   needs_human: { label: 'Feedback Needed', classes: 'bg-[#FED7AA] text-[#EA580C]', tooltip: 'Needs your attention: PR closed without merge, session timed out, or partial conversion' },
+  revision_needed: { label: 'Revision Needed', classes: 'bg-[#EDE9FE] text-[#7C3AED]', tooltip: 'PR was rejected — revision needed based on reviewer feedback' },
   failed: { label: 'Failed', classes: 'bg-[#FEE2E2] text-[#DC2626]', tooltip: 'Devin session failed' },
   skipped: { label: 'Skipped', classes: 'bg-[#F3F4F6] text-[#6B7280]', tooltip: 'Skipped by user' },
 };
@@ -25,7 +26,7 @@ const complexityConfig: Record<string, { dot: string; label: string }> = {
 
 type SortField = 'path' | 'complexity' | 'dep_depth' | 'loc' | 'status';
 
-const allStatuses: FileStatus[] = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'failed', 'skipped'];
+const allStatuses: FileStatus[] = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
 
 function getDisplayPath(path: string, status: FileStatus): string {
   if (status === 'merged') {
@@ -39,7 +40,7 @@ function getPriorityLabel(depth: number): string {
   return `P${depth}`;
 }
 
-export default function FileTable({ files }: Props) {
+export default function FileTable({ files, onStatusChange }: Props) {
   const [sortField, setSortField] = useState<SortField>('dep_depth');
   const [sortAsc, setSortAsc] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -143,6 +144,7 @@ export default function FileTable({ files }: Props) {
               >
                 Devin Session
               </th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#F3F4F6]">
@@ -154,6 +156,16 @@ export default function FileTable({ files }: Props) {
                 <tr key={file.id} className="hover:bg-[#F3F4F6] transition-colors">
                   <td className="px-4 py-3">
                     <span className="text-sm font-mono text-[#111827]">{getDisplayPath(file.path, file.status)}</span>
+                    {file.status === 'revision_needed' && file.reviewer_feedback && (
+                      <p className="text-[11px] text-[#6B7280] mt-1 truncate" title={file.reviewer_feedback}>
+                        Feedback: {file.reviewer_feedback.slice(0, 100)}{file.reviewer_feedback.length > 100 ? '...' : ''}
+                      </p>
+                    )}
+                    {file.error_reason && (
+                      <p className="text-[11px] text-[#EA580C] mt-1 truncate" title={file.error_reason}>
+                        {file.error_reason}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -198,6 +210,26 @@ export default function FileTable({ files }: Props) {
                       >
                         View
                       </a>
+                    ) : (
+                      <span className="text-[#D1D5DB]">{"\u2014"}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {(file.status === 'pending' || file.status === 'needs_human' || file.status === 'revision_needed' || file.status === 'failed') ? (
+                      <select
+                        className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1 text-xs text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        defaultValue=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            onStatusChange(file.id, e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                      >
+                        <option value="" disabled>Change…</option>
+                        <option value="skipped">Skip</option>
+                        <option value="pending">Reset to Waiting</option>
+                      </select>
                     ) : (
                       <span className="text-[#D1D5DB]">{"\u2014"}</span>
                     )}

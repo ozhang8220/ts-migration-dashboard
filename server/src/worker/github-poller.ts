@@ -115,8 +115,56 @@ async function pollGitHubPRs(): Promise<void> {
         await checkBatchProgression();
 
       } else if (pr.state === 'closed') {
-        console.log(`[github-poller] PR #${file.pr_number} closed without merge for ${file.path}`);
-        updateFileStatus(file.id, 'needs_human', 'PR closed without merge');
+        console.log(`[github-poller] PR #${file.pr_number} closed without merge for ${file.path} — fetching review comments`);
+
+        // Fetch review comments from 3 endpoints
+        let combinedFeedback = '';
+        try {
+          const [reviews, prComments, issueComments] = await Promise.all([
+            githubFetch(`/repos/${owner}/${repo}/pulls/${file.pr_number}/reviews`)
+              .then(r => r.json())
+              .catch(() => []) as Promise<Array<{ body?: string; user?: { login?: string } }>>,
+            githubFetch(`/repos/${owner}/${repo}/pulls/${file.pr_number}/comments`)
+              .then(r => r.json())
+              .catch(() => []) as Promise<Array<{ body?: string; user?: { login?: string }; path?: string }>>,
+            githubFetch(`/repos/${owner}/${repo}/issues/${file.pr_number}/comments`)
+              .then(r => r.json())
+              .catch(() => []) as Promise<Array<{ body?: string; user?: { login?: string } }>>,
+          ]);
+
+          const feedbackParts: string[] = [];
+          for (const review of (reviews as Array<{ body?: string; user?: { login?: string } }>)) {
+            if (review.body?.trim()) {
+              feedbackParts.push(`[Review by ${review.user?.login || 'unknown'}]: ${review.body}`);
+            }
+          }
+          for (const comment of (prComments as Array<{ body?: string; user?: { login?: string }; path?: string }>)) {
+            if (comment.body?.trim()) {
+              const fileRef = comment.path ? ` (on ${comment.path})` : '';
+              feedbackParts.push(`[PR Comment by ${comment.user?.login || 'unknown'}${fileRef}]: ${comment.body}`);
+            }
+          }
+          for (const comment of (issueComments as Array<{ body?: string; user?: { login?: string } }>)) {
+            if (comment.body?.trim()) {
+              feedbackParts.push(`[Comment by ${comment.user?.login || 'unknown'}]: ${comment.body}`);
+            }
+          }
+          combinedFeedback = feedbackParts.join('\n\n');
+        } catch (feedbackErr) {
+          const feedbackMsg = feedbackErr instanceof Error ? feedbackErr.message : String(feedbackErr);
+          console.warn(`[github-poller] Failed to fetch review comments for PR #${file.pr_number}: ${feedbackMsg}`);
+        }
+
+        // Update file with revision_needed status and reviewer feedback
+        db.prepare(
+          "UPDATE files SET status = 'revision_needed', reviewer_feedback = ?, error_reason = 'PR closed without merge', updated_at = datetime('now') WHERE id = ?"
+        ).run(combinedFeedback || null, file.id);
+
+        const fileRow = db.prepare('SELECT * FROM files WHERE id = ?').get(file.id) as { repo_id: string | null; path: string } | undefined;
+        const fileRepoId = fileRow?.repo_id ?? null;
+        db.prepare(
+          "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, 'pr_open', 'revision_needed', ?, ?, datetime('now'))"
+        ).run(file.id, file.path, `${file.path} \u2192 Revision Needed \uD83D\uDD01`, fileRepoId);
 
         if (file.batch_id) {
           db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(file.batch_id);

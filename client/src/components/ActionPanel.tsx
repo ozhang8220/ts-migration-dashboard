@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import type { Batch, BatchResponse, MigrationFile } from '../types';
+import type { Batch, BatchResponse, MigrationFile, BatchType } from '../types';
 
 interface Props {
   batches: Batch[];
   autoProgress: boolean;
-  onStartBatch: (batchSize: number, assignee?: string) => Promise<BatchResponse>;
+  onStartBatch: (batchSize: number, assignee?: string, batchType?: BatchType) => Promise<BatchResponse>;
   onToggleAutoProgress: (enabled: boolean) => Promise<void>;
   onResumeBatch: (batchId: string) => Promise<void>;
   onGetBatchFiles: (batchId: string) => Promise<MigrationFile[]>;
@@ -24,8 +24,15 @@ const fileStatusLabels: Record<string, string> = {
   pr_open: 'Ready for Review',
   merged: 'Completed',
   needs_human: 'Feedback Needed',
+  revision_needed: 'Revision Needed',
   failed: 'Failed',
   skipped: 'Skipped',
+};
+
+const batchTypeLabels: Record<string, string> = {
+  new_conversions: 'New Conversions',
+  revisions: 'Revisions',
+  all: 'All',
 };
 
 function getDisplayFilename(path: string, status: string): string {
@@ -38,6 +45,7 @@ function getDisplayFilename(path: string, status: string): string {
 
 export default function ActionPanel({ batches, autoProgress, onStartBatch, onToggleAutoProgress, onResumeBatch, onGetBatchFiles }: Props) {
   const [batchSize, setBatchSize] = useState(5);
+  const [batchType, setBatchType] = useState<BatchType>('new_conversions');
   const [assignee, setAssignee] = useState('');
   const [isStarting, setIsStarting] = useState(false);
   const [lastResult, setLastResult] = useState<BatchResponse | null>(null);
@@ -53,7 +61,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
     setIsStarting(true);
     setError(null);
     try {
-      const result = await onStartBatch(batchSize, assignee.trim() || undefined);
+      const result = await onStartBatch(batchSize, assignee.trim() || undefined, batchType);
       setLastResult(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start batch');
@@ -115,15 +123,42 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
 
       {/* Controls: all on one line */}
       <div className="flex items-center gap-3 flex-wrap">
-        <select
-          value={batchSize}
-          onChange={(e) => setBatchSize(Number(e.target.value))}
-          className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        >
-          <option value={3}>3 files</option>
-          <option value={5}>5 files</option>
-          <option value={8}>8 files</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[#6B7280]">Batch type:</span>
+          <select
+            value={batchType}
+            onChange={(e) => setBatchType(e.target.value as BatchType)}
+            className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="new_conversions">New Conversions</option>
+            <option value="revisions">Revisions</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[#6B7280]">Batch size:</span>
+          <select
+            value={batchSize}
+            onChange={(e) => setBatchSize(Number(e.target.value))}
+            className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value={3}>3 files</option>
+            <option value={5}>5 files</option>
+            <option value={8}>8 files</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[#6B7280]">Assign to:</span>
+          <input
+            type="text"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+            placeholder="GitHub username"
+            className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[220px]"
+          />
+        </div>
 
         <button
           onClick={handleStart}
@@ -132,14 +167,6 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         >
           {isStarting ? 'Starting...' : 'Start Batch'}
         </button>
-
-        <input
-          type="text"
-          value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
-          placeholder="Assignee (GitHub username)"
-          className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[220px]"
-        />
 
         <div className="flex items-center gap-2 ml-auto">
           <label className="text-xs text-[#6B7280]">Auto</label>
@@ -208,9 +235,13 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                       >
                         <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                       </svg>
-                      <span className="font-mono text-[#374151]">{batch.id}</span>
+                      <span className="font-mono text-[#374151]">
+                        {`Batch ${batch.id.startsWith('batch_') ? `#${batch.id.slice(6)}` : batch.id}`}
+                      </span>
                       <span className="text-[#9CA3AF]">
-                        {batch.total_files} files
+                        {batch.batch_type === 'all' && batch.revision_count > 0 && batch.new_count > 0
+                          ? `Mixed (${batch.revision_count} revisions + ${batch.new_count} new)`
+                          : `${batchTypeLabels[batch.batch_type] || 'New Conversions'} (${batch.total_files} files)`}
                       </span>
                     </div>
                     <span
@@ -236,11 +267,15 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                               <div key={file.id} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
                                 <span className="text-[#D1D5DB] font-mono">{connector}{"\u2500\u2500"}</span>
                                 <span className="font-mono text-[#374151]">{getDisplayFilename(file.path, file.status)}</span>
+                                <span className="text-[#9CA3AF]">
+                                  ({file.reviewer_feedback != null ? 'revision' : 'new'})
+                                </span>
                                 <span className="text-[#D1D5DB]">{"\u2192"}</span>
                                 <span className={`${
                                   file.status === 'merged' ? 'text-[#16A34A]' :
                                   file.status === 'failed' ? 'text-[#DC2626]' :
                                   file.status === 'needs_human' ? 'text-[#EA580C]' :
+                                  file.status === 'revision_needed' ? 'text-[#7C3AED]' :
                                   'text-[#6B7280]'
                                 }`}>{statusLabel}</span>
                                 {file.pr_url && file.pr_number && (

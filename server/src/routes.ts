@@ -3,7 +3,7 @@ import { getDb, logError } from './database';
 import { isDevinConfigured } from './devin/client';
 import { analyzeRepo, saveAnalysisToDb } from './github/analyzer';
 import { getRateLimitInfo, isGitHubConfigured } from './github/api';
-import { startNextBatch, getRepoConfig } from './worker/batch-progression';
+import { startNextBatch, getRepoConfig, BatchType } from './worker/batch-progression';
 
 const router = Router();
 
@@ -114,7 +114,7 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
   const fileId = req.params.id;
   const { status } = req.body;
 
-  const validStatuses = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'failed', 'skipped'];
+  const validStatuses = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'failed', 'skipped', 'revision_needed'];
   if (!status || !validStatuses.includes(status)) {
     res.status(400).json({ error: 'Invalid status. Must be one of: ' + validStatuses.join(', ') });
     return;
@@ -164,11 +164,14 @@ router.post('/batches', async (req: Request, res: Response) => {
       return;
     }
 
+    const validBatchTypes: BatchType[] = ['new_conversions', 'revisions', 'all'];
+    const batchType: BatchType = validBatchTypes.includes(req.body.batchType) ? req.body.batchType : 'new_conversions';
+
     if (!isDevinConfigured()) {
       // Still allow batch creation without Devin (files go to queued state)
     }
 
-    const result = await startNextBatch(batchSize, assignee);
+    const result = await startNextBatch(batchSize, assignee, batchType);
     const db = getDb();
     const files = db.prepare('SELECT * FROM files WHERE batch_id = ?').all(result.batchId);
 
@@ -303,6 +306,56 @@ router.patch('/config', (req: Request, res: Response) => {
 
   const updatedConfig = getRepoConfig();
   res.json(updatedConfig || { autoProgress: false });
+});
+
+// GET /api/repos — list all repos (active + archived) from repo_config
+router.get('/repos', (_req: Request, res: Response) => {
+  const db = getDb();
+  const repos = db.prepare('SELECT * FROM repo_config ORDER BY id ASC').all() as Array<{
+    id: number;
+    owner: string;
+    repo: string;
+    branch: string;
+    repo_id: string | null;
+    auto_progress: number;
+    archived: number;
+  }>;
+  res.json(repos.map(r => ({
+    id: r.id,
+    owner: r.owner,
+    repo: r.repo,
+    branch: r.branch,
+    repoId: r.repo_id || (r.owner && r.repo ? `${r.owner}/${r.repo}:${r.branch}` : null),
+    autoProgress: r.auto_progress === 1,
+    archived: r.archived === 1,
+  })));
+});
+
+// PATCH /api/repos/:repoId/archive
+router.patch('/repos/:repoId(*)/archive', (req: Request, res: Response) => {
+  const db = getDb();
+  const repoId = req.params.repoId;
+  const { archived } = req.body;
+
+  if (archived === undefined || typeof archived !== 'boolean') {
+    res.status(400).json({ error: 'archived (boolean) is required' });
+    return;
+  }
+
+  const row = db.prepare('SELECT * FROM repo_config WHERE repo_id = ?').get(repoId) as { id: number } | undefined;
+  if (!row) {
+    res.status(404).json({ error: 'Repo not found' });
+    return;
+  }
+
+  db.prepare('UPDATE repo_config SET archived = ? WHERE repo_id = ?').run(archived ? 1 : 0, repoId);
+
+  const action = archived ? 'archived' : 'restored';
+  db.prepare(
+    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (NULL, NULL, NULL, ?, ?, ?, datetime('now'))"
+  ).run(action, `Repository ${repoId} ${action}`, repoId);
+
+  res.json({ ok: true, repoId, archived });
 });
 
 // GET /api/errors

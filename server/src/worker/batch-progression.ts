@@ -1,7 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDb, logError } from '../database';
-import { createSessionWithRetry, MIGRATION_STRUCTURED_OUTPUT_SCHEMA } from '../devin/client';
+import { createSessionWithRetry, sendSessionMessage, MIGRATION_STRUCTURED_OUTPUT_SCHEMA } from '../devin/client';
 import { buildMigrationPrompt } from '../devin/prompt-builder';
+
+export type BatchType = 'new_conversions' | 'revisions' | 'all';
 
 const BATCH_FAILURE_HALT_THRESHOLD = 3;
 
@@ -180,7 +182,7 @@ export async function checkBatchProgression(): Promise<void> {
     'SELECT * FROM files WHERE batch_id = ?'
   ).all(currentBatch.id) as FileRow[];
 
-  const terminalStatuses = ['merged', 'failed', 'needs_human', 'skipped'];
+  const terminalStatuses = ['merged', 'failed', 'needs_human', 'skipped', 'revision_needed'];
   const allTerminal = batchFiles.every(f => terminalStatuses.includes(f.status));
 
   if (!allTerminal) return;
@@ -214,12 +216,23 @@ export async function checkBatchProgression(): Promise<void> {
   }
 }
 
+interface RevisionFileRow extends FileRow {
+  reviewer_feedback: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
+  repo_id: string | null;
+}
+
 /**
- * Start a new batch of pending files.
+ * Start a new batch of files. Supports three batch types:
+ * - 'new_conversions': picks pending files (default, same as old behavior)
+ * - 'revisions': picks revision_needed files, sends feedback to Devin
+ * - 'all': picks revision_needed first, then pending to fill remaining slots
  */
 export async function startNextBatch(
   batchSize: number,
-  assignee?: string | null
+  assignee?: string | null,
+  batchType: BatchType = 'new_conversions'
 ): Promise<{
   batchId: string;
   filesQueued: number;
@@ -236,22 +249,50 @@ export async function startNextBatch(
   const { isDevinConfigured } = await import('../devin/client');
   const devinEnabled = isDevinConfigured();
 
-  const pendingFiles = db.prepare(
-    `SELECT * FROM files WHERE status = 'pending' AND repo_id = ?
-     ORDER BY dep_depth ASC,
-     CASE complexity WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END ASC,
-     loc ASC
-     LIMIT ?`
-  ).all(repoId, batchSize) as FileRow[];
+  // Gather files based on batch type
+  let revisionFiles: RevisionFileRow[] = [];
+  let pendingFiles: FileRow[] = [];
 
-  if (pendingFiles.length === 0) {
-    throw new Error('No pending files available');
+  if (batchType === 'revisions' || batchType === 'all') {
+    revisionFiles = db.prepare(
+      `SELECT * FROM files WHERE status = 'revision_needed' AND repo_id = ?
+       ORDER BY updated_at ASC
+       LIMIT ?`
+    ).all(repoId, batchSize) as RevisionFileRow[];
+  }
+
+  const remainingSlots = batchSize - revisionFiles.length;
+
+  if ((batchType === 'new_conversions' || batchType === 'all') && remainingSlots > 0) {
+    pendingFiles = db.prepare(
+      `SELECT * FROM files WHERE status = 'pending' AND repo_id = ?
+       ORDER BY dep_depth ASC,
+       CASE complexity WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 END ASC,
+       loc ASC
+       LIMIT ?`
+    ).all(repoId, batchType === 'new_conversions' ? batchSize : remainingSlots) as FileRow[];
+  }
+
+  const totalFiles = revisionFiles.length + pendingFiles.length;
+  if (totalFiles === 0) {
+    if (batchType === 'revisions') {
+      throw new Error('No revision_needed files available');
+    } else if (batchType === 'all') {
+      throw new Error('No revision_needed or pending files available');
+    } else {
+      throw new Error('No pending files available');
+    }
   }
 
   const batchId = `batch-${uuidv4().slice(0, 8)}`;
 
+  // Determine display batch type for mixed batches
+  const effectiveBatchType: BatchType = batchType === 'all' && revisionFiles.length > 0 && pendingFiles.length > 0
+    ? 'all'
+    : batchType;
+
   const insertBatch = db.prepare(
-    "INSERT INTO batches (id, repo_id, status, total_files, started_at) VALUES (?, ?, 'running', ?, datetime('now'))"
+    "INSERT INTO batches (id, repo_id, status, batch_type, total_files, revision_count, new_count, started_at) VALUES (?, ?, 'running', ?, ?, ?, ?, datetime('now'))"
   );
   const updateFileQueued = normalizedAssignee
     ? db.prepare(
@@ -265,26 +306,44 @@ export async function startNextBatch(
   );
 
   const transaction = db.transaction(() => {
-    insertBatch.run(batchId, repoId, pendingFiles.length);
+    insertBatch.run(batchId, repoId, effectiveBatchType, totalFiles, revisionFiles.length, pendingFiles.length);
+    for (const file of revisionFiles) {
+      if (normalizedAssignee) {
+        updateFileQueued.run(batchId, normalizedAssignee, file.id);
+      } else {
+        updateFileQueued.run(batchId, file.id);
+      }
+      insertActivity.run(file.id, file.path, 'revision_needed', 'queued', `${file.path} \u2192 Queued for Revision (Batch ${batchId})`, repoId);
+    }
     for (const file of pendingFiles) {
       if (normalizedAssignee) {
         updateFileQueued.run(batchId, normalizedAssignee, file.id);
       } else {
         updateFileQueued.run(batchId, file.id);
       }
-      insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} → Queued (Batch ${batchId})`, repoId);
+      insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} \u2192 Queued (Batch ${batchId})`, repoId);
     }
   });
 
   transaction();
 
+  // Log batch start to activity
+  const batchTypeLabel = effectiveBatchType === 'all'
+    ? `${revisionFiles.length} revisions + ${pendingFiles.length} new`
+    : effectiveBatchType === 'revisions'
+    ? `${revisionFiles.length} revisions`
+    : `${pendingFiles.length} new conversions`;
+  db.prepare(
+    "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (NULL, NULL, NULL, 'running', ?, ?, datetime('now'))"
+  ).run(`Batch ${batchId} started \u2014 ${batchTypeLabel} \uD83D\uDD01`, repoId);
+
   // If Devin API is configured, create sessions
   if (devinEnabled) {
-    const config = getRepoConfig();
-    const repoFullName = config
-      ? `${config.owner}/${config.repo}`
+    const batchConfig = getRepoConfig();
+    const repoFullName = batchConfig
+      ? `${batchConfig.owner}/${batchConfig.repo}`
       : `${process.env.GITHUB_OWNER || 'ozhang8220'}/${process.env.GITHUB_REPO || 'shopdirect-frontend'}`;
-    const baseBranch = config?.branch || process.env.GITHUB_BASE_BRANCH || 'main';
+    const baseBranch = batchConfig?.branch || process.env.GITHUB_BASE_BRANCH || 'main';
 
     const mergedFiles = db.prepare(
       "SELECT path FROM files WHERE status = 'merged' AND repo_id = ?"
@@ -295,6 +354,86 @@ export async function startNextBatch(
         : f.path.replace(/\.js$/, '.ts')
     );
 
+    // Process revision files
+    for (const file of revisionFiles) {
+      try {
+        // Try to send follow-up message to existing Devin session
+        const existingSession = db.prepare(
+          "SELECT devin_session_id FROM devin_sessions WHERE file_id = ? ORDER BY started_at DESC LIMIT 1"
+        ).get(file.id) as { devin_session_id: string } | undefined;
+
+        let sessionCreated = false;
+        let newSessionUrl = '';
+
+        if (existingSession?.devin_session_id) {
+          try {
+            const feedbackMsg = `The PR was rejected by the reviewer. Here is their feedback:\n\n${file.reviewer_feedback || '(No specific feedback provided)'}\n\nPlease address all of this feedback and open a new PR against the ${baseBranch} branch. Keep the same conversion standards as before.`;
+            await sendSessionMessage(existingSession.devin_session_id, feedbackMsg);
+            sessionCreated = true;
+            console.log(`[batch] Sent revision message to existing session ${existingSession.devin_session_id} for ${file.path}`);
+
+            insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
+          } catch (msgErr) {
+            console.warn(`[batch] Failed to send message to session ${existingSession.devin_session_id}, falling back to new session:`, msgErr);
+          }
+        }
+
+        if (!sessionCreated) {
+          // Fall back to creating a new session with revision context
+          const closedPrUrl = file.pr_url || '';
+          const revisionPrefix = `## Previous Attempt\nA previous conversion was attempted but the PR was rejected.\nClosed PR: ${closedPrUrl}\n\n## Reviewer Feedback\nThe reviewer provided the following feedback. Address ALL of it:\n${file.reviewer_feedback || '(No specific feedback provided)'}\n\n## Important\nOpen a NEW PR. Do not try to reopen the closed one.\nNote in the PR description what changed compared to the previous attempt.\n\n`;
+
+          const basePrompt = buildMigrationPrompt(
+            {
+              path: file.path,
+              loc: file.loc,
+              complexity: file.complexity,
+              importedBy: file.imported_by,
+              depDepth: file.dep_depth,
+            },
+            { repoFullName, baseBranch, alreadyConverted }
+          );
+
+          const fullPrompt = revisionPrefix + basePrompt;
+
+          const session = await createSessionWithRetry(
+            fullPrompt,
+            file.path,
+            3,
+            MIGRATION_STRUCTURED_OUTPUT_SCHEMA as Record<string, unknown>,
+            repoFullName
+          );
+
+          const sessionId = `sess-${uuidv4().slice(0, 8)}`;
+          db.prepare(
+            "INSERT INTO devin_sessions (id, devin_session_id, file_id, batch_id, repo_id, status, devin_url, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?, datetime('now'))"
+          ).run(sessionId, session.session_id, file.id, batchId, repoId, session.url);
+          newSessionUrl = session.url;
+
+          insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
+          console.log(`[batch] Created new revision session for ${file.path}: ${session.session_id}`);
+        }
+
+        db.prepare(
+          "UPDATE files SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?"
+        ).run(file.id);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to process revision';
+        console.error(`[batch] Failed to process revision for ${file.path}:`, errorMsg);
+        logError('batch_create', `Failed to process revision for ${file.path}`, errorMsg);
+
+        db.prepare(
+          "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
+        ).run(errorMsg, file.id);
+
+        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
+        db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
+
+        if (shouldHaltBatch(batchId)) break;
+      }
+    }
+
+    // Process new conversion files (same as before)
     for (const file of pendingFiles) {
       try {
         const prompt = buildMigrationPrompt(
@@ -325,7 +464,7 @@ export async function startNextBatch(
           "UPDATE files SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?"
         ).run(file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} → In Progress (Devin Session Started)`, repoId);
+        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 In Progress (Devin Session Started)`, repoId);
         console.log(`[batch] Created Devin session for ${file.path}: ${session.session_id}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
@@ -336,16 +475,15 @@ export async function startNextBatch(
           "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
         ).run(errorMsg, file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} → Failed (${errorMsg})`, repoId);
+        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
         db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
 
-        // Check if we should halt
         if (shouldHaltBatch(batchId)) break;
       }
     }
   } else {
-    console.log(`[batch] Devin API not configured — batch ${batchId} created with ${pendingFiles.length} files in queued state only`);
+    console.log(`[batch] Devin API not configured — batch ${batchId} created with ${totalFiles} files in queued state only`);
   }
 
-  return { batchId, filesQueued: pendingFiles.length, devinEnabled };
+  return { batchId, filesQueued: totalFiles, devinEnabled };
 }

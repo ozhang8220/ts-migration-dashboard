@@ -1,4 +1,5 @@
-export type FileStatus = 'pending' | 'queued' | 'in_progress' | 'pr_open' | 'merged' | 'needs_human' | 'failed' | 'skipped';
+export type FileStatus = 'pending' | 'queued' | 'in_progress' | 'pr_open' | 'merged' | 'needs_human' | 'failed' | 'skipped' | 'revision_needed';
+export type BatchType = 'new_conversions' | 'revisions' | 'all';
 export type Complexity = 'low' | 'medium' | 'high';
 
 export interface MigrationFile {
@@ -14,6 +15,7 @@ export interface MigrationFile {
   pr_url: string | null;
   pr_number: number | null;
   assignee: string | null;
+  reviewer_feedback: string | null;
   error_reason: string | null;
   created_at: string;
   updated_at: string;
@@ -32,6 +34,8 @@ export interface RepoConfig {
   repo: string | null;
   branch: string;
   autoProgress: boolean;
+  repoId?: string | null;
+  archived?: boolean;
 }
 
 export interface Stats {
@@ -50,9 +54,12 @@ export interface Stats {
 export interface Batch {
   id: string;
   status: string;
+  batch_type: BatchType;
   total_files: number;
   completed: number;
   failed: number;
+  revision_count: number;
+  new_count: number;
   started_at: string;
   completed_at: string | null;
 }
@@ -72,6 +79,16 @@ export interface BatchResponse {
   filesQueued: number;
   devinEnabled?: boolean;
   files: MigrationFile[];
+}
+
+export interface RepoInfo {
+  id: number;
+  owner: string;
+  repo: string;
+  branch: string;
+  repoId: string | null;
+  autoProgress: boolean;
+  archived: boolean;
 }
 
 export interface ErrorLogEntry {
