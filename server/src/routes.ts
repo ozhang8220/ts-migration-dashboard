@@ -371,15 +371,20 @@ router.patch('/config', (req: Request, res: Response) => {
   res.json(updatedConfig || { autoProgress: false });
 });
 
-// GET /api/repos — list all repos (active + archived) from repo_config
+// GET /api/repos — list all repos (active + archived) from repos table
 router.get('/repos', (_req: Request, res: Response) => {
   const db = getDb();
-  const repos = db.prepare('SELECT * FROM repo_config ORDER BY id ASC').all() as Array<{
-    id: number;
+  const current = getRepoConfig();
+  if (current?.repoId && current.owner && current.repo) {
+    db.prepare(
+      "INSERT OR IGNORE INTO repos (id, owner, repo, branch, auto_progress, archived, analyzed_at) VALUES (?, ?, ?, ?, ?, 0, datetime('now'))"
+    ).run(current.repoId, current.owner, current.repo, current.branch, current.autoProgress ? 1 : 0);
+  }
+  const repos = db.prepare('SELECT * FROM repos ORDER BY analyzed_at DESC, created_at DESC').all() as Array<{
+    id: string;
     owner: string;
     repo: string;
     branch: string;
-    repo_id: string | null;
     auto_progress: number;
     archived: number;
   }>;
@@ -388,7 +393,7 @@ router.get('/repos', (_req: Request, res: Response) => {
     owner: r.owner,
     repo: r.repo,
     branch: r.branch,
-    repoId: r.repo_id || (r.owner && r.repo ? `${r.owner}/${r.repo}:${r.branch}` : null),
+    repoId: r.id,
     autoProgress: r.auto_progress === 1,
     archived: r.archived === 1,
   })));
@@ -405,13 +410,13 @@ router.patch('/repos/:repoId(*)/archive', (req: Request, res: Response) => {
     return;
   }
 
-  const row = db.prepare('SELECT * FROM repo_config WHERE repo_id = ?').get(repoId) as { id: number } | undefined;
+  const row = db.prepare('SELECT id FROM repos WHERE id = ?').get(repoId) as { id: string } | undefined;
   if (!row) {
     res.status(404).json({ error: 'Repo not found' });
     return;
   }
 
-  db.prepare('UPDATE repo_config SET archived = ? WHERE repo_id = ?').run(archived ? 1 : 0, repoId);
+  db.prepare('UPDATE repos SET archived = ? WHERE id = ?').run(archived ? 1 : 0, repoId);
 
   const action = archived ? 'archived' : 'restored';
   db.prepare(

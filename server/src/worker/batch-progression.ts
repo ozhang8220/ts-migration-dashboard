@@ -393,7 +393,6 @@ export async function startNextBatch(
             sessionCreated = true;
             console.log(`[batch] Sent revision message to existing session ${existingSession.devin_session_id} for ${file.path}`);
 
-            insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
           } catch (msgErr) {
             console.warn(`[batch] Failed to send message to session ${existingSession.devin_session_id}, falling back to new session:`, msgErr);
           }
@@ -431,7 +430,6 @@ export async function startNextBatch(
           ).run(sessionId, session.session_id, file.id, batchId, repoId, session.url);
           newSessionUrl = session.url;
 
-          insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
           console.log(`[batch] Created new revision session for ${file.path}: ${session.session_id}`);
         }
 
@@ -483,7 +481,6 @@ export async function startNextBatch(
           "UPDATE files SET status = 'in_progress', error_reason = NULL, updated_at = datetime('now') WHERE id = ?"
         ).run(file.id);
 
-        insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 In Progress (Retry Started)`, repoId);
         console.log(`[batch] Created retry Devin session for ${file.path}: ${session.session_id}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
@@ -530,7 +527,6 @@ export async function startNextBatch(
 
         // Already marked in_progress when batch is created.
 
-        insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 In Progress (Devin Session Started)`, repoId);
         console.log(`[batch] Created Devin session for ${file.path}: ${session.session_id}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';

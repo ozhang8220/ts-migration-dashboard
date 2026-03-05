@@ -27,13 +27,7 @@ const statusDotConfig: Record<FileStatus, string> = {
   skipped: 'bg-[#9CA3AF]',
 };
 
-const complexityConfig: Record<string, { dot: string; label: string }> = {
-  low: { dot: 'bg-emerald-400', label: 'Low' },
-  medium: { dot: 'bg-amber-400', label: 'Medium' },
-  high: { dot: 'bg-rose-400', label: 'High' },
-};
-
-type SortField = 'path' | 'complexity' | 'dep_depth' | 'loc' | 'status';
+type SortField = 'path' | 'dep_depth' | 'loc' | 'status';
 
 const allStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
 const selectableStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
@@ -122,11 +116,6 @@ export default function FileTable({ files, onStatusChange }: Props) {
         case 'path':
           cmp = a.path.localeCompare(b.path);
           break;
-        case 'complexity': {
-          const order: Record<string, number> = { low: 0, medium: 1, high: 2 };
-          cmp = (order[a.complexity] || 0) - (order[b.complexity] || 0);
-          break;
-        }
         case 'dep_depth':
           cmp = a.dep_depth - b.dep_depth;
           break;
@@ -178,19 +167,17 @@ export default function FileTable({ files, onStatusChange }: Props) {
       <div className="overflow-x-hidden">
         <table className="w-full table-fixed">
           <colgroup>
-            <col className="w-[40%]" />
+            <col className="w-[45%]" />
             <col className="w-[10%]" />
             <col className="w-[8%]" />
-            <col className="w-[6%]" />
-            <col className="w-[12%]" />
+            <col className="w-[13%]" />
             <col className="w-[12%]" />
             <col className="w-[6%]" />
             <col className="w-[6%]" />
           </colgroup>
           <thead>
             <tr className="bg-[#F9FAFB]">
-              <SortHeader field="path" className="w-[40%]">File Path</SortHeader>
-              <SortHeader field="complexity">Complexity</SortHeader>
+              <SortHeader field="path" className="w-[45%]">File Path</SortHeader>
               <SortHeader field="dep_depth">Priority</SortHeader>
               <SortHeader field="loc">Lines</SortHeader>
               <SortHeader field="status" className="text-center [&>div]:justify-center">Status</SortHeader>
@@ -207,7 +194,6 @@ export default function FileTable({ files, onStatusChange }: Props) {
           <tbody className="divide-y divide-[#F3F4F6]">
             {sortedFiles.map((file) => {
               const statusCfg = statusConfig[file.status];
-              const complexityCfg = complexityConfig[file.complexity] || complexityConfig.low;
               const humanFeedback = file.status === 'revision_needed'
                 ? getHumanReviewerFeedback(file.reviewer_feedback)
                 : '';
@@ -227,12 +213,6 @@ export default function FileTable({ files, onStatusChange }: Props) {
                         {compactMeta}
                       </p>
                     )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${complexityCfg.dot}`} />
-                      <span className="text-sm text-[#6B7280]">{complexityCfg.label}</span>
-                    </div>
                   </td>
                   <td className="px-4 py-2 text-sm text-[#6B7280]">{getPriorityLabel(file.dep_depth)}</td>
                   <td className="px-4 py-2 text-sm text-[#6B7280]">{file.loc}</td>

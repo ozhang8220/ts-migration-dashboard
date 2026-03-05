@@ -48,6 +48,7 @@ export default function ActivityFeed({ activity }: Props) {
           activity
             .filter((entry) => {
               if (entry.new_status === 'queued' || entry.new_status === 'in_batch') return false;
+              if (entry.file_path && entry.old_status && entry.old_status === entry.new_status) return false;
               return ['in_progress', 'pr_open', 'merged', 'revision_needed', 'failed'].includes(entry.new_status) || !entry.file_path;
             })
             .map((entry) => {

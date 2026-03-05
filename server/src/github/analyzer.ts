@@ -505,9 +505,11 @@ export function saveAnalysisToDb(
       "INSERT OR REPLACE INTO repo_config (id, owner, repo, branch, repo_id, auto_progress, analyzed_at) VALUES (1, ?, ?, ?, ?, ?, datetime('now'))"
     ).run(owner, repo, branch, repoId, autoProgress);
 
+    const existingRepoRow = db.prepare("SELECT archived FROM repos WHERE id = ?").get(repoId) as { archived: number } | undefined;
+    const archived = existingRepoRow?.archived ?? 0;
     db.prepare(
-      "INSERT OR REPLACE INTO repos (id, owner, repo, branch, auto_progress, analyzed_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
-    ).run(repoId, owner, repo, branch, autoProgress);
+      "INSERT OR REPLACE INTO repos (id, owner, repo, branch, auto_progress, archived, analyzed_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
+    ).run(repoId, owner, repo, branch, autoProgress, archived);
 
     if (isSameRepo) {
       const existingRows = db.prepare('SELECT id, path, status, pr_url, pr_number FROM files WHERE repo_id = ?').all(repoId) as {

@@ -93,6 +93,11 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, onGoHome,
     loadRepos();
   }, []);
 
+  // Refresh repo list when active repo changes so newly connected repos appear immediately.
+  useEffect(() => {
+    loadRepos();
+  }, [repoConfig?.repoId]);
+
   const loadRepos = async () => {
     try {
       const repos = await onGetRepos();

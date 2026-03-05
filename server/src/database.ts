@@ -182,6 +182,7 @@ function migrateToPerRepoSchema(): void {
       branch TEXT NOT NULL,
       analyzed_at TEXT,
       auto_progress INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
@@ -200,6 +201,13 @@ function migrateToPerRepoSchema(): void {
     } catch {
       try { db.exec(`ALTER TABLE ${table} ADD COLUMN repo_id TEXT`); } catch { /* already exists */ }
     }
+  }
+
+  // Add archived to repos if missing
+  try {
+    db.prepare("SELECT archived FROM repos LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE repos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
   }
 
   // Backfill repo_id for existing data (single-repo migration)

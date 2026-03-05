@@ -82,7 +82,7 @@ export interface BatchResponse {
 }
 
 export interface RepoInfo {
-  id: number;
+  id: string | number;
   owner: string;
   repo: string;
   branch: string;
