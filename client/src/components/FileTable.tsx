@@ -9,7 +9,6 @@ interface Props {
 
 const statusConfig: Record<FileStatus, { label: string; classes: string; tooltip: string }> = {
   pending: { label: 'Waiting', classes: 'bg-[#F3F4F6] text-[#6B7280]', tooltip: 'Waiting to be picked up by a batch' },
-  queued: { label: 'In Batch', classes: 'bg-[#DBEAFE] text-[#2563EB]', tooltip: 'Assigned to a batch, Devin session starting' },
   in_progress: { label: 'In Progress', classes: 'bg-[#DBEAFE] text-[#2563EB]', tooltip: 'Devin is converting the file' },
   pr_open: { label: 'Ready for Review', classes: 'bg-[#FEF3C7] text-[#D97706]', tooltip: 'PR is open — ready to review and merge' },
   merged: { label: 'Completed', classes: 'bg-[#DCFCE7] text-[#16A34A]', tooltip: 'PR merged, conversion complete' },
@@ -20,7 +19,6 @@ const statusConfig: Record<FileStatus, { label: string; classes: string; tooltip
 
 const statusDotConfig: Record<FileStatus, string> = {
   pending: 'bg-[#9CA3AF]',
-  queued: 'bg-[#2563EB]',
   in_progress: 'bg-[#2563EB]',
   pr_open: 'bg-[#D97706]',
   merged: 'bg-[#16A34A]',
@@ -37,9 +35,15 @@ const complexityConfig: Record<string, { dot: string; label: string }> = {
 
 type SortField = 'path' | 'complexity' | 'dep_depth' | 'loc' | 'status';
 
-const allStatuses: FileStatus[] = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
+const allStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
 const selectableStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
-const filterStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
+const filterStatuses: FileStatus[] = ['merged', 'pr_open', 'revision_needed', 'in_progress', 'failed', 'pending'];
+
+function normalizeStatus(status: string): FileStatus {
+  if (status === 'queued' || status === 'in_batch' || status === 'needs_human') return 'in_progress';
+  if (allStatuses.includes(status as FileStatus)) return status as FileStatus;
+  return 'pending';
+}
 
 function getDisplayPath(path: string, status: FileStatus): string {
   if (status === 'merged') {
@@ -90,7 +94,8 @@ export default function FileTable({ files, onStatusChange }: Props) {
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const f of files) {
-      counts[f.status] = (counts[f.status] || 0) + 1;
+      const s = normalizeStatus(f.status);
+      counts[s] = (counts[s] || 0) + 1;
     }
     return counts;
   }, [files]);
@@ -105,9 +110,10 @@ export default function FileTable({ files, onStatusChange }: Props) {
   };
 
   const sortedFiles = useMemo(() => {
-    let filtered = files;
+    const normalizedFiles = files.map((f) => ({ ...f, status: normalizeStatus(f.status) as FileStatus }));
+    let filtered = normalizedFiles;
     if (filterStatus !== 'all') {
-      filtered = files.filter((f) => f.status === filterStatus);
+      filtered = normalizedFiles.filter((f) => f.status === filterStatus);
     }
 
     return [...filtered].sort((a, b) => {

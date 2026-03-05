@@ -185,19 +185,15 @@ const transaction = db.transaction(() => {
   // Seed activity log
   const now = Date.now();
   const activities = [
-    { fileId: 'src/utils/formatDate.js', path: 'src/utils/formatDate.js', from: 'pending', to: 'queued', msg: 'formatDate.js → Queued', offset: -180 },
-    { fileId: 'src/utils/formatDate.js', path: 'src/utils/formatDate.js', from: 'queued', to: 'in_progress', msg: 'formatDate.js → In Progress', offset: -170 },
+    { fileId: 'src/utils/formatDate.js', path: 'src/utils/formatDate.js', from: 'pending', to: 'in_progress', msg: 'formatDate.js → In Progress', offset: -170 },
     { fileId: 'src/utils/formatDate.js', path: 'src/utils/formatDate.js', from: 'in_progress', to: 'pr_open', msg: 'formatDate.js → PR Open', offset: -140 },
     { fileId: 'src/utils/formatDate.js', path: 'src/utils/formatDate.js', from: 'pr_open', to: 'merged', msg: 'formatDate.js → Merged ✅', offset: -90 },
-    { fileId: 'src/utils/slugify.js', path: 'src/utils/slugify.js', from: 'pending', to: 'queued', msg: 'slugify.js → Queued', offset: -175 },
-    { fileId: 'src/utils/slugify.js', path: 'src/utils/slugify.js', from: 'queued', to: 'in_progress', msg: 'slugify.js → In Progress', offset: -165 },
+    { fileId: 'src/utils/slugify.js', path: 'src/utils/slugify.js', from: 'pending', to: 'in_progress', msg: 'slugify.js → In Progress', offset: -165 },
     { fileId: 'src/utils/slugify.js', path: 'src/utils/slugify.js', from: 'in_progress', to: 'pr_open', msg: 'slugify.js → PR Open', offset: -130 },
     { fileId: 'src/utils/slugify.js', path: 'src/utils/slugify.js', from: 'pr_open', to: 'merged', msg: 'slugify.js → Merged ✅', offset: -80 },
-    { fileId: 'src/components/Button.jsx', path: 'src/components/Button.jsx', from: 'pending', to: 'queued', msg: 'Button.jsx → Queued', offset: -160 },
-    { fileId: 'src/components/Button.jsx', path: 'src/components/Button.jsx', from: 'queued', to: 'in_progress', msg: 'Button.jsx → In Progress', offset: -150 },
+    { fileId: 'src/components/Button.jsx', path: 'src/components/Button.jsx', from: 'pending', to: 'in_progress', msg: 'Button.jsx → In Progress', offset: -150 },
     { fileId: 'src/components/Button.jsx', path: 'src/components/Button.jsx', from: 'in_progress', to: 'pr_open', msg: 'Button.jsx → PR Open', offset: -60 },
-    { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'pending', to: 'queued', msg: 'analytics.js → Queued', offset: -155 },
-    { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'queued', to: 'in_progress', msg: 'analytics.js → In Progress', offset: -145 },
+    { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'pending', to: 'in_progress', msg: 'analytics.js → In Progress', offset: -145 },
     { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'in_progress', to: 'pr_open', msg: 'analytics.js → Ready for Review 👀', offset: -30 },
   ];
 
@@ -216,7 +212,7 @@ console.log('✅ Database seeded successfully!');
 console.log(`   📁 ${files.length} files`);
 console.log('   📦 1 batch');
 console.log('   🤖 4 Devin sessions');
-console.log('   📋 14 activity log entries');
+console.log('   📋 10 activity log entries');
 console.log(`   💾 Database at: ${DB_PATH}`);
 
 db.close();

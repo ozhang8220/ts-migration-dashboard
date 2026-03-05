@@ -25,7 +25,7 @@ function pathToBranch(path: string): string {
 }
 
 /**
- * Sync in_progress/queued files with GitHub open PRs.
+ * Sync in_progress files with GitHub open PRs.
  * When Devin creates a PR, the Devin API may not return it — so we detect via GitHub.
  */
 async function syncInProgressWithPRs(): Promise<void> {
@@ -42,7 +42,7 @@ async function syncInProgressWithPRs(): Promise<void> {
   const branch = config.branch || 'main';
 
   const inProgressFiles = db.prepare(
-    "SELECT * FROM files WHERE status IN ('in_progress', 'queued') AND repo_id = ?"
+    "SELECT * FROM files WHERE status = 'in_progress' AND repo_id = ?"
   ).all(repoId) as FileRow[];
 
   if (inProgressFiles.length === 0) return;

@@ -14,25 +14,19 @@ function formatTime(dateStr: string): string {
 }
 
 const statusEmojis: Record<string, string> = {
-  pending: '\u23F3',
-  queued: '\u23F3',
   in_progress: '\uD83D\uDD04',
   pr_open: '\uD83D\uDC40',
   merged: '\u2705',
   revision_needed: '\uD83D\uDD01',
   failed: '\u274C',
-  skipped: '\u23ED\uFE0F',
 };
 
 const statusLabels: Record<string, string> = {
-  pending: 'Waiting',
-  queued: 'In Batch',
   in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
   revision_needed: 'Revision Needed',
   failed: 'Failed',
-  skipped: 'Skipped',
 };
 
 function getDisplayFilename(path: string, status: string): string {
@@ -51,7 +45,12 @@ export default function ActivityFeed({ activity }: Props) {
         {activity.length === 0 ? (
           <p className="text-sm text-[#9CA3AF] text-center py-8">No activity yet</p>
         ) : (
-          activity.map((entry) => {
+          activity
+            .filter((entry) => {
+              if (entry.new_status === 'queued' || entry.new_status === 'in_batch') return false;
+              return ['in_progress', 'pr_open', 'merged', 'revision_needed', 'failed'].includes(entry.new_status) || !entry.file_path;
+            })
+            .map((entry) => {
             const emoji = statusEmojis[entry.new_status] || '';
             const label = statusLabels[entry.new_status] || entry.new_status;
 
@@ -76,7 +75,7 @@ export default function ActivityFeed({ activity }: Props) {
                 )}
               </div>
             );
-          })
+            })
         )}
       </div>
     </div>

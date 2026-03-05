@@ -307,12 +307,12 @@ export async function startNextBatch(
   const insertBatch = db.prepare(
     "INSERT INTO batches (id, repo_id, status, batch_type, total_files, revision_count, new_count, started_at) VALUES (?, ?, 'running', ?, ?, ?, ?, datetime('now'))"
   );
-  const updateFileQueued = normalizedAssignee
+  const updateFileInProgress = normalizedAssignee
     ? db.prepare(
-      "UPDATE files SET status = 'queued', batch_id = ?, assignee = ?, updated_at = datetime('now') WHERE id = ?"
+      "UPDATE files SET status = 'in_progress', batch_id = ?, assignee = ?, updated_at = datetime('now') WHERE id = ?"
     )
     : db.prepare(
-      "UPDATE files SET status = 'queued', batch_id = ?, updated_at = datetime('now') WHERE id = ?"
+      "UPDATE files SET status = 'in_progress', batch_id = ?, updated_at = datetime('now') WHERE id = ?"
     );
   const insertActivity = db.prepare(
     "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))"
@@ -322,27 +322,27 @@ export async function startNextBatch(
     insertBatch.run(batchId, repoId, effectiveBatchType, totalFiles, revisionFiles.length + retryFiles.length, pendingFiles.length);
     for (const file of revisionFiles) {
       if (normalizedAssignee) {
-        updateFileQueued.run(batchId, normalizedAssignee, file.id);
+        updateFileInProgress.run(batchId, normalizedAssignee, file.id);
       } else {
-        updateFileQueued.run(batchId, file.id);
+        updateFileInProgress.run(batchId, file.id);
       }
-      insertActivity.run(file.id, file.path, 'revision_needed', 'queued', `${file.path} \u2192 Queued for Revision (Batch ${batchId})`, repoId);
+      insertActivity.run(file.id, file.path, 'revision_needed', 'in_progress', `${file.path} \u2192 In Progress (Batch ${batchId})`, repoId);
     }
     for (const file of pendingFiles) {
       if (normalizedAssignee) {
-        updateFileQueued.run(batchId, normalizedAssignee, file.id);
+        updateFileInProgress.run(batchId, normalizedAssignee, file.id);
       } else {
-        updateFileQueued.run(batchId, file.id);
+        updateFileInProgress.run(batchId, file.id);
       }
-      insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} \u2192 Queued (Batch ${batchId})`, repoId);
+      insertActivity.run(file.id, file.path, 'pending', 'in_progress', `${file.path} \u2192 In Progress (Batch ${batchId})`, repoId);
     }
     for (const file of retryFiles) {
       if (normalizedAssignee) {
-        updateFileQueued.run(batchId, normalizedAssignee, file.id);
+        updateFileInProgress.run(batchId, normalizedAssignee, file.id);
       } else {
-        updateFileQueued.run(batchId, file.id);
+        updateFileInProgress.run(batchId, file.id);
       }
-      insertActivity.run(file.id, file.path, 'failed', 'queued', `${file.path} \u2192 Queued for Retry (Batch ${batchId})`, repoId);
+      insertActivity.run(file.id, file.path, 'failed', 'in_progress', `${file.path} \u2192 In Progress (Retry Batch ${batchId})`, repoId);
     }
   });
 
@@ -393,7 +393,7 @@ export async function startNextBatch(
             sessionCreated = true;
             console.log(`[batch] Sent revision message to existing session ${existingSession.devin_session_id} for ${file.path}`);
 
-            insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
+            insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
           } catch (msgErr) {
             console.warn(`[batch] Failed to send message to session ${existingSession.devin_session_id}, falling back to new session:`, msgErr);
           }
@@ -431,13 +431,11 @@ export async function startNextBatch(
           ).run(sessionId, session.session_id, file.id, batchId, repoId, session.url);
           newSessionUrl = session.url;
 
-          insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
+          insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 Sent to Devin with feedback \uD83D\uDD01`, repoId);
           console.log(`[batch] Created new revision session for ${file.path}: ${session.session_id}`);
         }
 
-        db.prepare(
-          "UPDATE files SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?"
-        ).run(file.id);
+        // Already marked in_progress when batch is created.
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to process revision';
         console.error(`[batch] Failed to process revision for ${file.path}:`, errorMsg);
@@ -447,7 +445,7 @@ export async function startNextBatch(
           "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
         ).run(errorMsg, file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
+        insertActivity.run(file.id, file.path, 'in_progress', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
         db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
 
         if (shouldHaltBatch(batchId)) break;
@@ -485,7 +483,7 @@ export async function startNextBatch(
           "UPDATE files SET status = 'in_progress', error_reason = NULL, updated_at = datetime('now') WHERE id = ?"
         ).run(file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 In Progress (Retry Started)`, repoId);
+        insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 In Progress (Retry Started)`, repoId);
         console.log(`[batch] Created retry Devin session for ${file.path}: ${session.session_id}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
@@ -496,7 +494,7 @@ export async function startNextBatch(
           "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
         ).run(errorMsg, file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
+        insertActivity.run(file.id, file.path, 'in_progress', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
         db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
 
         if (shouldHaltBatch(batchId)) break;
@@ -530,11 +528,9 @@ export async function startNextBatch(
           "INSERT INTO devin_sessions (id, devin_session_id, file_id, batch_id, repo_id, status, devin_url, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?, datetime('now'))"
         ).run(sessionId, session.session_id, file.id, batchId, repoId, session.url);
 
-        db.prepare(
-          "UPDATE files SET status = 'in_progress', updated_at = datetime('now') WHERE id = ?"
-        ).run(file.id);
+        // Already marked in_progress when batch is created.
 
-        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 In Progress (Devin Session Started)`, repoId);
+        insertActivity.run(file.id, file.path, 'in_progress', 'in_progress', `${file.path} \u2192 In Progress (Devin Session Started)`, repoId);
         console.log(`[batch] Created Devin session for ${file.path}: ${session.session_id}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
@@ -545,14 +541,14 @@ export async function startNextBatch(
           "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
         ).run(errorMsg, file.id);
 
-        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
+        insertActivity.run(file.id, file.path, 'in_progress', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
         db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
 
         if (shouldHaltBatch(batchId)) break;
       }
     }
   } else {
-    console.log(`[batch] Devin API not configured — batch ${batchId} created with ${totalFiles} files in queued state only`);
+    console.log(`[batch] Devin API not configured — batch ${batchId} created with ${totalFiles} files in in_progress state`);
   }
 
   return { batchId, filesQueued: totalFiles, devinEnabled };

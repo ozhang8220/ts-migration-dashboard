@@ -1,4 +1,4 @@
-export type FileStatus = 'pending' | 'queued' | 'in_progress' | 'pr_open' | 'merged' | 'failed' | 'skipped' | 'revision_needed';
+export type FileStatus = 'pending' | 'in_progress' | 'pr_open' | 'merged' | 'failed' | 'skipped' | 'revision_needed';
 export type BatchType = 'new_conversions' | 'revisions' | 'all';
 export type Complexity = 'low' | 'medium' | 'high';
 

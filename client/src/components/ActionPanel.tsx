@@ -19,7 +19,6 @@ const batchStatusConfig: Record<string, string> = {
 
 const fileStatusLabels: Record<string, string> = {
   pending: 'Waiting',
-  queued: 'In Batch',
   in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
@@ -27,6 +26,11 @@ const fileStatusLabels: Record<string, string> = {
   failed: 'Failed',
   skipped: 'Skipped',
 };
+
+function normalizeStatus(status: string): string {
+  if (status === 'queued' || status === 'in_batch' || status === 'needs_human') return 'in_progress';
+  return status;
+}
 
 const batchTypeLabels: Record<string, string> = {
   new_conversions: 'New Conversions',
@@ -263,7 +267,8 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                           {bFiles.map((file, idx) => {
                             const isLast = idx === bFiles.length - 1;
                             const connector = isLast ? '\u2514' : '\u251C';
-                            const statusLabel = fileStatusLabels[file.status] || file.status;
+                            const normalizedStatus = normalizeStatus(file.status);
+                            const statusLabel = fileStatusLabels[normalizedStatus] || normalizedStatus;
                             return (
                               <div key={file.id} className="flex items-center gap-2 text-xs py-0.5 flex-wrap">
                                 <span className="text-[#D1D5DB] font-mono">{connector}{"\u2500\u2500"}</span>
@@ -273,9 +278,9 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                                 </span>
                                 <span className="text-[#D1D5DB]">{"\u2192"}</span>
                                 <span className={`${
-                                  file.status === 'merged' ? 'text-[#16A34A]' :
-                                  file.status === 'failed' ? 'text-[#DC2626]' :
-                                  file.status === 'revision_needed' ? 'text-[#7C3AED]' :
+                                  normalizedStatus === 'merged' ? 'text-[#16A34A]' :
+                                  normalizedStatus === 'failed' ? 'text-[#DC2626]' :
+                                  normalizedStatus === 'revision_needed' ? 'text-[#7C3AED]' :
                                   'text-[#6B7280]'
                                 }`}>{statusLabel}</span>
                                 {file.pr_url && file.pr_number && (

@@ -30,6 +30,14 @@ router.get('/stats', (_req: Request, res: Response) => {
     byStatus['pr_open'] = (byStatus['pr_open'] || 0) + byStatus['needs_human'];
     delete byStatus['needs_human'];
   }
+  if (byStatus['queued']) {
+    byStatus['in_progress'] = (byStatus['in_progress'] || 0) + byStatus['queued'];
+    delete byStatus['queued'];
+  }
+  if (byStatus['in_batch']) {
+    byStatus['in_progress'] = (byStatus['in_progress'] || 0) + byStatus['in_batch'];
+    delete byStatus['in_batch'];
+  }
 
   const complexityRows = db.prepare('SELECT complexity, COUNT(*) as count FROM files' + filesFilter + ' GROUP BY complexity').all(...filesParams) as { complexity: string; count: number }[];
   const byComplexity: Record<string, number> = {};
@@ -93,11 +101,11 @@ router.get('/files', (req: Request, res: Response) => {
   }
 
   const files = db.prepare(query).all(...params) as Array<Record<string, unknown>>;
-  const normalizedFiles = files.map((f) => (
-    f.status === 'needs_human'
-      ? { ...f, status: 'pr_open' }
-      : f
-  ));
+  const normalizedFiles = files.map((f) => {
+    if (f.status === 'needs_human') return { ...f, status: 'pr_open' };
+    if (f.status === 'queued' || f.status === 'in_batch') return { ...f, status: 'in_progress' };
+    return f;
+  });
   res.json(normalizedFiles);
 });
 
@@ -114,7 +122,12 @@ router.get('/files/:id(*)', (req: Request, res: Response) => {
 
   const sessions = db.prepare('SELECT * FROM devin_sessions WHERE file_id = ? ORDER BY started_at DESC').all(fileId);
 
-  const normalizedFile = file.status === 'needs_human' ? { ...file, status: 'pr_open' } : file;
+  const normalizedFile =
+    file.status === 'needs_human'
+      ? { ...file, status: 'pr_open' }
+      : (file.status === 'queued' || file.status === 'in_batch')
+        ? { ...file, status: 'in_progress' }
+        : file;
   res.json({ ...normalizedFile, sessions });
 });
 
@@ -124,7 +137,7 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
   const fileId = req.params.id;
   const { status } = req.body;
 
-  const validStatuses = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'failed', 'skipped', 'revision_needed'];
+  const validStatuses = ['pending', 'in_progress', 'pr_open', 'merged', 'failed', 'skipped', 'revision_needed'];
   if (!status || !validStatuses.includes(status)) {
     res.status(400).json({ error: 'Invalid status. Must be one of: ' + validStatuses.join(', ') });
     return;
@@ -187,7 +200,7 @@ router.post('/batches', async (req: Request, res: Response) => {
     const batchType: BatchType = validBatchTypes.includes(req.body.batchType) ? req.body.batchType : 'new_conversions';
 
     if (!isDevinConfigured()) {
-      // Still allow batch creation without Devin (files go to queued state)
+      // Still allow batch creation without Devin
     }
 
     const result = await startNextBatch(batchSize, assignee, batchType);

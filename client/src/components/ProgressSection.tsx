@@ -10,9 +10,15 @@ const statusCards = [
   { key: 'merged', label: 'Completed', bg: 'bg-[#DCFCE7]', text: 'text-[#16A34A]', count: 'text-[#16A34A]' },
   { key: 'pr_open', label: 'Ready for Review', bg: 'bg-[#FEF3C7]', text: 'text-[#D97706]', count: 'text-[#D97706]' },
   { key: 'revision_needed', label: 'Revision Needed', bg: 'bg-[#EDE9FE]', text: 'text-[#7C3AED]', count: 'text-[#7C3AED]' },
+  { key: 'failed', label: 'Failed', bg: 'bg-[#FEE2E2]', text: 'text-[#DC2626]', count: 'text-[#DC2626]' },
   { key: 'in_progress', label: 'In Progress', bg: 'bg-[#DBEAFE]', text: 'text-[#2563EB]', count: 'text-[#2563EB]' },
   { key: 'pending', label: 'Waiting', bg: 'bg-[#F3F4F6]', text: 'text-[#6B7280]', count: 'text-[#6B7280]' },
 ];
+
+function normalizeStatus(status: string): string {
+  if (status === 'queued' || status === 'in_batch' || status === 'needs_human') return 'in_progress';
+  return status;
+}
 
 function formatDuration(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -113,11 +119,11 @@ export default function ProgressSection({ stats, files }: Props) {
       </div>
 
       {/* Status Cards */}
-      <div className="grid grid-cols-5 gap-4" ref={dropdownRef}>
+      <div className="grid grid-cols-6 gap-4" ref={dropdownRef}>
         {statusCards.map((card) => {
           const cardCount = byStatus[card.key] || 0;
           const isExpanded = expandedCard === card.key;
-          const cardFiles = files.filter((f) => f.status === card.key);
+          const cardFiles = files.filter((f) => normalizeStatus(f.status) === card.key);
 
           return (
             <div key={card.key} className="relative">
