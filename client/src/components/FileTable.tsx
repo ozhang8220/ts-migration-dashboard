@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { MigrationFile, FileStatus } from '../types';
 
 interface Props {
@@ -16,6 +16,18 @@ const statusConfig: Record<FileStatus, { label: string; classes: string; tooltip
   revision_needed: { label: 'Revision Needed', classes: 'bg-[#EDE9FE] text-[#7C3AED]', tooltip: 'PR was rejected — revision needed based on reviewer feedback' },
   failed: { label: 'Failed', classes: 'bg-[#FEE2E2] text-[#DC2626]', tooltip: 'Devin session failed' },
   skipped: { label: 'Skipped', classes: 'bg-[#F3F4F6] text-[#6B7280]', tooltip: 'Skipped by user' },
+};
+
+const statusDotConfig: Record<FileStatus, string> = {
+  pending: 'bg-[#9CA3AF]',
+  queued: 'bg-[#2563EB]',
+  in_progress: 'bg-[#2563EB]',
+  pr_open: 'bg-[#D97706]',
+  merged: 'bg-[#16A34A]',
+  needs_human: 'bg-[#EA580C]',
+  revision_needed: 'bg-[#7C3AED]',
+  failed: 'bg-[#DC2626]',
+  skipped: 'bg-[#9CA3AF]',
 };
 
 const complexityConfig: Record<string, { dot: string; label: string }> = {
@@ -44,6 +56,18 @@ export default function FileTable({ files, onStatusChange }: Props) {
   const [sortField, setSortField] = useState<SortField>('dep_depth');
   const [sortAsc, setSortAsc] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [openStatusFileId, setOpenStatusFileId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('[data-status-dropdown]')) {
+        setOpenStatusFileId(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -135,7 +159,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
               <SortHeader field="complexity">Complexity</SortHeader>
               <SortHeader field="dep_depth">Priority</SortHeader>
               <SortHeader field="loc">Lines</SortHeader>
-              <SortHeader field="status" className="min-w-[160px]">Status</SortHeader>
+              <SortHeader field="status" className="w-[148px]">Status</SortHeader>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Assignee</th>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">PR Link</th>
               <th
@@ -144,7 +168,6 @@ export default function FileTable({ files, onStatusChange }: Props) {
               >
                 Devin Session
               </th>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#F3F4F6]">
@@ -175,13 +198,43 @@ export default function FileTable({ files, onStatusChange }: Props) {
                   </td>
                   <td className="px-4 py-3 text-sm text-[#6B7280]">{getPriorityLabel(file.dep_depth)}</td>
                   <td className="px-4 py-3 text-sm text-[#6B7280]">{file.loc}</td>
-                  <td className="px-4 py-3 min-w-[160px]">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusCfg.classes}`}
-                      title={statusCfg.tooltip}
-                    >
-                      {statusCfg.label}
-                    </span>
+                  <td className="px-4 py-3 w-[148px]">
+                    <div className="relative mx-auto w-[136px]" data-status-dropdown>
+                      <button
+                        type="button"
+                        onClick={() => setOpenStatusFileId((prev) => (prev === file.id ? null : file.id))}
+                        className={`group flex w-full items-center justify-between rounded-full px-2 py-1 text-[13px] font-medium leading-none ${statusCfg.classes}`}
+                        title={statusCfg.tooltip}
+                      >
+                        <span className="truncate">{statusCfg.label}</span>
+                        <span className="ml-1 text-[10px] opacity-0 transition-opacity group-hover:opacity-70">▾</span>
+                      </button>
+
+                      {openStatusFileId === file.id && (
+                        <div className="absolute right-0 z-20 mt-1 w-[136px] rounded-md border border-[#E5E7EB] bg-white p-1 shadow-md">
+                          {allStatuses.map((s) => {
+                            const cfg = statusConfig[s];
+                            const isCurrent = s === file.status;
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => {
+                                  setOpenStatusFileId(null);
+                                  if (!isCurrent) onStatusChange(file.id, s);
+                                }}
+                                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] text-[#374151] hover:bg-[#F9FAFB] ${
+                                  isCurrent ? 'bg-[#F3F4F6]' : ''
+                                }`}
+                              >
+                                <span className={`h-1.5 w-1.5 rounded-full ${statusDotConfig[s]}`} />
+                                <span className="truncate">{cfg.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-[#6B7280]">
                     {file.assignee || <span className="text-[#D1D5DB]">{"\u2014"}</span>}
@@ -210,26 +263,6 @@ export default function FileTable({ files, onStatusChange }: Props) {
                       >
                         View
                       </a>
-                    ) : (
-                      <span className="text-[#D1D5DB]">{"\u2014"}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {(file.status === 'pending' || file.status === 'needs_human' || file.status === 'revision_needed' || file.status === 'failed') ? (
-                      <select
-                        className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1 text-xs text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            onStatusChange(file.id, e.target.value);
-                            e.target.value = '';
-                          }
-                        }}
-                      >
-                        <option value="" disabled>Change…</option>
-                        <option value="skipped">Skip</option>
-                        <option value="pending">Reset to Waiting</option>
-                      </select>
                     ) : (
                       <span className="text-[#D1D5DB]">{"\u2014"}</span>
                     )}

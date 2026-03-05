@@ -121,54 +121,56 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         </div>
       )}
 
-      {/* Controls: all on one line */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[#6B7280]">Batch type:</span>
-          <select
-            value={batchType}
-            onChange={(e) => setBatchType(e.target.value as BatchType)}
-            className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          >
-            <option value="new_conversions">New Conversions</option>
-            <option value="revisions">Revisions</option>
-            <option value="all">All</option>
-          </select>
+      {/* Controls: compact 3-row layout */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#6B7280]">Batch type:</span>
+            <select
+              value={batchType}
+              onChange={(e) => setBatchType(e.target.value as BatchType)}
+              className="h-9 bg-white border border-[#E5E7EB] rounded-md px-2.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value="new_conversions">New Conversions</option>
+              <option value="revisions">Revisions</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#6B7280]">Batch size:</span>
+            <select
+              value={batchSize}
+              onChange={(e) => setBatchSize(Number(e.target.value))}
+              className="h-9 bg-white border border-[#E5E7EB] rounded-md px-2.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value={3}>3 files</option>
+              <option value={5}>5 files</option>
+              <option value={8}>8 files</option>
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[#6B7280]">Batch size:</span>
-          <select
-            value={batchSize}
-            onChange={(e) => setBatchSize(Number(e.target.value))}
-            className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          >
-            <option value={3}>3 files</option>
-            <option value={5}>5 files</option>
-            <option value={8}>8 files</option>
-          </select>
-        </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs text-[#6B7280]">Assign to:</span>
           <input
             type="text"
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
             placeholder="GitHub username"
-            className="bg-white border border-[#E5E7EB] rounded-md px-2 py-1.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[220px]"
+            className="h-9 bg-white border border-[#E5E7EB] rounded-md px-2.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[220px]"
           />
+
+          <button
+            onClick={handleStart}
+            disabled={isStarting}
+            className="h-9 px-4 bg-[#111827] hover:bg-[#1F2937] disabled:bg-[#D1D5DB] text-white font-medium rounded-md text-sm transition-colors"
+          >
+            {isStarting ? 'Starting...' : 'Start Batch'}
+          </button>
         </div>
 
-        <button
-          onClick={handleStart}
-          disabled={isStarting}
-          className="px-4 py-1.5 bg-[#111827] hover:bg-[#1F2937] disabled:bg-[#D1D5DB] text-white font-medium rounded-md text-sm transition-colors"
-        >
-          {isStarting ? 'Starting...' : 'Start Batch'}
-        </button>
-
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2">
           <label className="text-xs text-[#6B7280]">Auto</label>
           <button
             onClick={() => onToggleAutoProgress(!autoProgress)}
