@@ -25,15 +25,18 @@ interface Props {
   repoConfig: RepoConfig | null;
   onSelectRepo: (fullName: string, branch: string) => Promise<AnalysisResult>;
   onAddRepo: () => void;
+  onGoHome: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onGetRepos: () => Promise<RepoInfo[]>;
   onArchiveRepo: (repoId: string) => Promise<void>;
   onRestoreRepo: (repoId: string) => Promise<void>;
+  onWipeRepo: (repoId: string) => Promise<void>;
 }
 
-export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed, onToggleCollapse, onGetRepos, onArchiveRepo, onRestoreRepo }: Props) {
+export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, onGoHome, collapsed, onToggleCollapse, onGetRepos, onArchiveRepo, onRestoreRepo, onWipeRepo }: Props) {
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>(loadRecentRepos);
+  const [allRepos, setAllRepos] = useState<RepoInfo[]>([]);
   const [switchingRepo, setSwitchingRepo] = useState<string | null>(null);
   const [menuOpenRepo, setMenuOpenRepo] = useState<string | null>(null);
   const [archiveConfirm, setArchiveConfirm] = useState<{ repoId: string; name: string } | null>(null);
@@ -41,6 +44,9 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
   const [archivedRepos, setArchivedRepos] = useState<RepoInfo[]>([]);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
+  const [archivedMenuOpenRepo, setArchivedMenuOpenRepo] = useState<string | null>(null);
+  const [wipeConfirm, setWipeConfirm] = useState<{ repoId: string; name: string } | null>(null);
+  const [wiping, setWiping] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const currentRepo = repoConfig?.owner && repoConfig?.repo
@@ -57,6 +63,12 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
       .map((r) => r.repoId)
       .filter((id): id is string => Boolean(id))
   );
+  const activeRepoIdSet = new Set(
+    allRepos
+      .filter((r) => !r.archived)
+      .map((r) => r.repoId)
+      .filter((id): id is string => Boolean(id))
+  );
 
   const reposToShow = [...recentRepos];
   if (currentRepo) {
@@ -66,23 +78,42 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
     }
   }
 
-  const activeReposToShow = reposToShow.filter((r) => !archivedRepoIdSet.has(getRepoId(r)));
+  // Show only active repos that still exist server-side (prevents stale localStorage entries)
+  const activeReposToShow = reposToShow.filter((r) => {
+    const id = getRepoId(r);
+    return !archivedRepoIdSet.has(id) && activeRepoIdSet.has(id);
+  });
 
   useEffect(() => {
     setRecentRepos(loadRecentRepos());
   }, [currentRepo, currentBranch]);
 
-  // Load archived repos
+  // Load repos (active + archived)
   useEffect(() => {
-    loadArchivedRepos();
+    loadRepos();
   }, []);
 
-  const loadArchivedRepos = async () => {
+  const loadRepos = async () => {
     try {
       const repos = await onGetRepos();
+      setAllRepos(repos);
       setArchivedRepos(repos.filter(r => r.archived));
     } catch {
       // ignore
+    }
+  };
+
+  const removeRecentRepoByRepoId = (repoId: string) => {
+    const idx = repoId.lastIndexOf(':');
+    if (idx <= 0) return;
+    const fullName = repoId.slice(0, idx);
+    const branch = repoId.slice(idx + 1);
+    const next = recentRepos.filter((r) => !(r.fullName === fullName && r.branch === branch));
+    setRecentRepos(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore storage errors
     }
   };
 
@@ -91,6 +122,7 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpenRepo(null);
+        setArchivedMenuOpenRepo(null);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -116,7 +148,7 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
       await onArchiveRepo(archiveConfirm.repoId);
       setArchiveConfirm(null);
       setMenuOpenRepo(null);
-      await loadArchivedRepos();
+      await loadRepos();
     } catch {
       // error handled elsewhere
     } finally {
@@ -128,11 +160,26 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
     setRestoring(repoId);
     try {
       await onRestoreRepo(repoId);
-      await loadArchivedRepos();
+      await loadRepos();
     } catch {
       // error handled elsewhere
     } finally {
       setRestoring(null);
+    }
+  };
+
+  const handleWipe = async () => {
+    if (!wipeConfirm) return;
+    setWiping(true);
+    try {
+      await onWipeRepo(wipeConfirm.repoId);
+      removeRecentRepoByRepoId(wipeConfirm.repoId);
+      setWipeConfirm(null);
+      await loadRepos();
+    } catch {
+      // error handled elsewhere
+    } finally {
+      setWiping(false);
     }
   };
 
@@ -146,7 +193,13 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
       {/* Header with toggle */}
       <div className={`flex items-center border-b border-[#F3F4F6] ${collapsed ? 'justify-center py-5 px-1' : 'justify-between px-5 py-5'}`}>
         {!collapsed && (
-          <h1 className="text-sm font-semibold text-[#111827] tracking-tight">TS Migrate</h1>
+          <button
+            onClick={onGoHome}
+            className="text-sm font-semibold text-[#111827] tracking-tight hover:text-[#1F2937] transition-colors"
+            title="Go to landing page"
+          >
+            TS Migrate
+          </button>
         )}
         <button
           onClick={onToggleCollapse}
@@ -288,13 +341,21 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
             </div>
 
             {/* Archived section */}
-            {archivedRepos.length > 0 && (
-              <div className="mt-6">
-                <button
-                  onClick={() => setArchivedExpanded(!archivedExpanded)}
-                  className="w-full flex items-center justify-between px-2 py-1.5 text-[11px] font-medium text-[#9CA3AF] uppercase tracking-wider hover:text-[#6B7280] transition-colors"
-                >
-                  <span>Archived ({archivedRepos.length})</span>
+            <div className="mt-6 pt-3 border-t border-[#F3F4F6]">
+              <button
+                onClick={() => setArchivedExpanded(!archivedExpanded)}
+                className="w-full flex items-center justify-between px-2 py-1.5 rounded-md text-[11px] font-medium text-[#6B7280] uppercase tracking-wider hover:bg-[#F9FAFB] hover:text-[#111827] transition-colors"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 text-[#9CA3AF]" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2.5 4A1.5 1.5 0 014 2.5h12A1.5 1.5 0 0117.5 4v1a1.5 1.5 0 01-1.5 1.5h-12A1.5 1.5 0 012.5 5V4zm0 4.5A1.5 1.5 0 014 7h12a1.5 1.5 0 011.5 1.5V16A1.5 1.5 0 0116 17.5H4A1.5 1.5 0 012.5 16V8.5zm5.75 2a.75.75 0 000 1.5h3.5a.75.75 0 000-1.5h-3.5z" />
+                  </svg>
+                  Archived
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#F3F4F6] text-[#6B7280] text-[10px] normal-case tracking-normal">
+                    {archivedRepos.length}
+                  </span>
                   <svg
                     className={`w-3 h-3 transition-transform ${archivedExpanded ? 'rotate-180' : ''}`}
                     viewBox="0 0 20 20"
@@ -302,35 +363,76 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
                   >
                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
-                </button>
-                {archivedExpanded && (
-                  <div className="space-y-0.5 mt-1">
-                    {archivedRepos.map((repo) => {
+                </span>
+              </button>
+              {archivedExpanded && (
+                <div className="space-y-1 mt-1.5">
+                  {archivedRepos.length === 0 ? (
+                    <p className="px-3 py-2 text-[11px] text-[#9CA3AF]">No archived repos</p>
+                  ) : (
+                    archivedRepos.map((repo) => {
                       const repoName = repo.repo || (repo.repoId?.split('/').pop()?.split(':')[0]) || 'Unknown';
+                      const repoId = repo.repoId || '';
                       const isRestoring = restoring === (repo.repoId || '');
+                      const isArchivedMenuOpen = archivedMenuOpenRepo === repoId;
                       return (
                         <div
                           key={repo.repoId || repo.id}
-                          className="flex items-center justify-between px-3 py-2 rounded-lg text-[#9CA3AF]"
+                          className="relative flex items-center justify-between px-3 py-2 rounded-lg bg-[#FAFAFA] border border-[#F3F4F6] group"
                         >
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium truncate">{repoName}</p>
-                            <p className="text-[10px] truncate">{repo.branch}</p>
+                            <p className="text-xs font-medium text-[#6B7280] truncate">{repoName}</p>
+                            <p className="text-[10px] text-[#9CA3AF] truncate">{repo.branch}</p>
                           </div>
+
                           <button
-                            onClick={() => repo.repoId && handleRestore(repo.repoId)}
-                            disabled={isRestoring}
-                            className="text-[11px] text-[#3B82F6] hover:text-[#2563EB] font-medium disabled:opacity-50 whitespace-nowrap ml-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!repoId) return;
+                              setArchivedMenuOpenRepo(isArchivedMenuOpen ? null : repoId);
+                            }}
+                            className={`ml-2 w-6 h-6 rounded flex items-center justify-center text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#E5E7EB] transition-all ${
+                              isArchivedMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                            disabled={!repoId}
                           >
-                            {isRestoring ? 'Restoring...' : 'Restore'}
+                            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                              <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                            </svg>
                           </button>
+
+                          {isArchivedMenuOpen && repoId && (
+                            <div className="absolute right-2 top-full mt-1 w-32 bg-white border border-[#E5E7EB] rounded-lg shadow-lg z-30 py-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setArchivedMenuOpenRepo(null);
+                                  handleRestore(repoId);
+                                }}
+                                disabled={isRestoring}
+                                className="w-full text-left px-3 py-2 text-[11px] text-[#3B82F6] hover:bg-[#F9FAFB] hover:text-[#2563EB] disabled:opacity-50 transition-colors"
+                              >
+                                {isRestoring ? 'Restoring...' : 'Restore'}
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setArchivedMenuOpenRepo(null);
+                                  setWipeConfirm({ repoId, name: `${repo.owner}/${repo.repo}@${repo.branch}` });
+                                }}
+                                className="w-full text-left px-3 py-2 text-[11px] text-[#DC2626] hover:bg-[#F9FAFB] hover:text-[#B91C1C] transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                    })
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="px-3 py-3 border-t border-[#F3F4F6]">
@@ -371,6 +473,35 @@ export default function Sidebar({ repoConfig, onSelectRepo, onAddRepo, collapsed
               className="px-4 py-2 text-sm font-medium text-white bg-[#D97706] hover:bg-[#B45309] rounded-lg transition-colors disabled:opacity-50"
             >
               {archiving ? 'Archiving...' : 'Archive'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Delete confirmation modal */}
+    {wipeConfirm && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+        <div className="bg-white rounded-xl border border-[#E5E7EB] shadow-2xl p-6 max-w-md mx-4" style={{ boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+          <h3 className="text-lg font-semibold text-[#111827] mb-2">
+            Permanently delete {wipeConfirm.name}?
+          </h3>
+          <p className="text-sm text-[#6B7280] mb-5 leading-relaxed">
+            This will permanently delete all dashboard data for this repo/branch (files, batches, activity, sessions). This cannot be undone.
+          </p>
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={() => setWipeConfirm(null)}
+              className="px-4 py-2 text-sm font-medium text-[#6B7280] hover:text-[#111827] rounded-lg hover:bg-[#F3F4F6] transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleWipe}
+              disabled={wiping}
+              className="px-4 py-2 text-sm font-medium text-white bg-[#DC2626] hover:bg-[#B91C1C] rounded-lg transition-colors disabled:opacity-50"
+            >
+              {wiping ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>

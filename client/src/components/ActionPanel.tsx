@@ -122,10 +122,10 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
       )}
 
       {/* Controls: compact 3-row layout */}
-      <div className="space-y-2.5">
-        <div className="flex items-center gap-5 flex-wrap">
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-[#6B7280]">Batch type:</span>
+            <span className="text-[13px] text-[#6B7280]">Batch type:</span>
             <select
               value={batchType}
               onChange={(e) => setBatchType(e.target.value as BatchType)}
@@ -138,7 +138,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-[#6B7280]">Batch size:</span>
+            <span className="text-[13px] text-[#6B7280]">Batch size:</span>
             <select
               value={batchSize}
               onChange={(e) => setBatchSize(Number(e.target.value))}
@@ -151,27 +151,27 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-[#6B7280]">Assign to:</span>
+        <div className="flex items-center gap-4">
+          <span className="text-[13px] text-[#6B7280]">Assign to:</span>
           <input
             type="text"
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
-            placeholder="GitHub username"
-            className="h-9 bg-white border border-[#E5E7EB] rounded-md px-2.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[220px]"
+            placeholder="First Last - github_username"
+            className="h-9 flex-1 min-w-0 bg-white border border-[#E5E7EB] rounded-md px-2.5 text-sm text-[#374151] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
 
           <button
             onClick={handleStart}
             disabled={isStarting}
-            className="h-9 px-4 bg-[#111827] hover:bg-[#1F2937] disabled:bg-[#D1D5DB] text-white font-medium rounded-md text-sm transition-colors"
+            className="h-9 px-4 bg-[#111827] hover:bg-[#1F2937] disabled:bg-[#D1D5DB] text-white font-medium rounded-md text-sm transition-colors whitespace-nowrap"
           >
             {isStarting ? 'Starting...' : 'Start Batch'}
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-[#6B7280]">Auto</label>
+        <div className="flex items-center gap-2 justify-end pr-1">
+          <label className="text-[13px] text-[#6B7280]">Auto</label>
           <button
             onClick={() => onToggleAutoProgress(!autoProgress)}
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${

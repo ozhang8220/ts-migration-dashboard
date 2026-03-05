@@ -35,10 +35,12 @@ export default function App() {
     getRepos,
     archiveRepo,
     restoreRepo,
+    wipeRepo,
   } = useDashboardData();
 
   const [showRepoModal, setShowRepoModal] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showLandingOverride, setShowLandingOverride] = useState(false);
 
   if (loading) {
     return (
@@ -66,22 +68,36 @@ export default function App() {
     );
   }
 
-  const showAnalyzeForm = stats && stats.totalFiles === 0;
   const repoConfig = stats?.repoConfig;
+  const hasActiveRepo = Boolean(repoConfig?.owner && repoConfig?.repo);
+  const showAddRepoLanding = !hasActiveRepo || showLandingOverride;
+  const showAnalyzeForm = hasActiveRepo && stats && stats.totalFiles === 0;
   const autoProgress = repoConfig?.autoProgress ?? false;
+
+  const handleSelectRepo = async (fullName: string, branch: string) => {
+    setShowLandingOverride(false);
+    return analyzeRepo(fullName, branch);
+  };
+
+  const handleAnalyzeRepo = async (repoFullName: string, branch: string) => {
+    setShowLandingOverride(false);
+    return analyzeRepo(repoFullName, branch);
+  };
 
   return (
     <div className="min-h-screen bg-[#FAFAFA]">
       {/* Sidebar */}
       <Sidebar
         repoConfig={repoConfig ?? null}
-        onSelectRepo={analyzeRepo}
+        onSelectRepo={handleSelectRepo}
         onAddRepo={() => setShowRepoModal(true)}
+        onGoHome={() => setShowLandingOverride(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         onGetRepos={getRepos}
         onArchiveRepo={archiveRepo}
         onRestoreRepo={restoreRepo}
+        onWipeRepo={wipeRepo}
       />
 
       {/* Main content area */}
@@ -115,8 +131,23 @@ export default function App() {
             </div>
           )}
 
-          {showAnalyzeForm ? (
-            <AnalyzeForm onAnalyze={analyzeRepo} />
+          {showAddRepoLanding ? (
+            <div className="max-w-xl mx-auto">
+              <div className="bg-white rounded-lg border border-[#E5E7EB] p-8 text-center" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                <h2 className="text-xl font-semibold text-[#111827] mb-2">No active repository</h2>
+                <p className="text-sm text-[#6B7280] mb-6">
+                  Add a repository to start tracking migration progress and batches.
+                </p>
+                <button
+                  onClick={() => setShowRepoModal(true)}
+                  className="px-5 py-2.5 bg-[#111827] hover:bg-[#1F2937] text-white font-medium rounded-lg text-sm transition-colors"
+                >
+                  Add Repository
+                </button>
+              </div>
+            </div>
+          ) : showAnalyzeForm ? (
+            <AnalyzeForm onAnalyze={handleAnalyzeRepo} />
           ) : (
             <>
               {stats && <ProgressSection stats={stats} files={files} />}
@@ -146,7 +177,7 @@ export default function App() {
       {/* Repo modal (rendered outside layout flow) */}
       <RepoSelector
         repoConfig={repoConfig ?? null}
-        onAnalyze={analyzeRepo}
+        onAnalyze={handleAnalyzeRepo}
         showModal={showRepoModal}
         onCloseModal={() => setShowRepoModal(false)}
       />

@@ -281,6 +281,37 @@ router.post('/analyze', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/repos/:repoId — permanently wipe a repo's dashboard data
+router.delete('/repos/:repoId(*)', (req: Request, res: Response) => {
+  const db = getDb();
+  const repoId = req.params.repoId;
+  if (!repoId) {
+    res.status(400).json({ error: 'repoId is required' });
+    return;
+  }
+
+  const current = getRepoConfig();
+  const isCurrentRepo = current?.repoId === repoId;
+
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM devin_sessions WHERE repo_id = ?').run(repoId);
+    db.prepare('DELETE FROM files WHERE repo_id = ?').run(repoId);
+    db.prepare('DELETE FROM batches WHERE repo_id = ?').run(repoId);
+    db.prepare('DELETE FROM activity_log WHERE repo_id = ?').run(repoId);
+    db.prepare('DELETE FROM repos WHERE id = ?').run(repoId);
+    db.prepare('DELETE FROM repo_config WHERE repo_id = ?').run(repoId);
+
+    if (isCurrentRepo) {
+      db.prepare(
+        "INSERT OR REPLACE INTO repo_config (id, owner, repo, branch, repo_id, auto_progress, archived, analyzed_at) VALUES (1, '', '', 'main', NULL, 0, 0, datetime('now'))"
+      ).run();
+    }
+  });
+
+  transaction();
+  res.json({ ok: true, repoId, isCurrentRepo });
+});
+
 // GET /api/config
 router.get('/config', (_req: Request, res: Response) => {
   const config = getRepoConfig();

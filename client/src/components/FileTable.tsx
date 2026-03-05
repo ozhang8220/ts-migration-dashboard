@@ -39,6 +39,8 @@ const complexityConfig: Record<string, { dot: string; label: string }> = {
 type SortField = 'path' | 'complexity' | 'dep_depth' | 'loc' | 'status';
 
 const allStatuses: FileStatus[] = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
+const selectableStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
+const filterStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
 
 function getDisplayPath(path: string, status: FileStatus): string {
   if (status === 'merged') {
@@ -143,7 +145,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
             className="bg-white border border-[#E5E7EB] rounded-md px-3 py-1.5 text-[13px] text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           >
             <option value="all">All Statuses ({files.length})</option>
-            {allStatuses.map((s) => {
+            {filterStatuses.map((s) => {
               const count = statusCounts[s] || 0;
               if (count === 0) return null;
               return <option key={s} value={s}>{statusConfig[s].label} ({count})</option>;
@@ -159,7 +161,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
               <SortHeader field="complexity">Complexity</SortHeader>
               <SortHeader field="dep_depth">Priority</SortHeader>
               <SortHeader field="loc">Lines</SortHeader>
-              <SortHeader field="status" className="w-[148px]">Status</SortHeader>
+              <SortHeader field="status" className="text-center [&>div]:justify-center">Status</SortHeader>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Assignee</th>
               <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">PR Link</th>
               <th
@@ -198,21 +200,21 @@ export default function FileTable({ files, onStatusChange }: Props) {
                   </td>
                   <td className="px-4 py-3 text-sm text-[#6B7280]">{getPriorityLabel(file.dep_depth)}</td>
                   <td className="px-4 py-3 text-sm text-[#6B7280]">{file.loc}</td>
-                  <td className="px-4 py-3 w-[148px]">
-                    <div className="relative mx-auto w-[136px]" data-status-dropdown>
+                  <td className="px-4 py-3">
+                    <div className="relative mx-auto w-[110px]" data-status-dropdown>
                       <button
                         type="button"
                         onClick={() => setOpenStatusFileId((prev) => (prev === file.id ? null : file.id))}
-                        className={`group flex w-full items-center justify-between rounded-full px-2 py-1 text-[13px] font-medium leading-none ${statusCfg.classes}`}
+                        className={`group flex w-[110px] items-center justify-start rounded-[12px] px-2.5 py-1.5 text-xs font-medium leading-5 ${statusCfg.classes}`}
                         title={statusCfg.tooltip}
                       >
-                        <span className="truncate">{statusCfg.label}</span>
-                        <span className="ml-1 text-[10px] opacity-0 transition-opacity group-hover:opacity-70">▾</span>
+                        <span className="truncate text-left">{statusCfg.label}</span>
+                        <span className="absolute right-2 text-[10px] opacity-0 transition-opacity group-hover:opacity-70">▾</span>
                       </button>
 
                       {openStatusFileId === file.id && (
-                        <div className="absolute right-0 z-20 mt-1 w-[136px] rounded-md border border-[#E5E7EB] bg-white p-1 shadow-md">
-                          {allStatuses.map((s) => {
+                        <div className="absolute left-0 z-20 mt-1 w-[110px] rounded-md border border-[#E5E7EB] bg-white p-1 shadow-md">
+                          {selectableStatuses.map((s) => {
                             const cfg = statusConfig[s];
                             const isCurrent = s === file.status;
                             return (
@@ -223,12 +225,12 @@ export default function FileTable({ files, onStatusChange }: Props) {
                                   setOpenStatusFileId(null);
                                   if (!isCurrent) onStatusChange(file.id, s);
                                 }}
-                                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] text-[#374151] hover:bg-[#F9FAFB] ${
+                                className={`flex w-full items-center justify-start gap-1.5 rounded px-2 py-1.5 text-xs leading-5 text-[#374151] hover:bg-[#F9FAFB] ${
                                   isCurrent ? 'bg-[#F3F4F6]' : ''
                                 }`}
                               >
                                 <span className={`h-1.5 w-1.5 rounded-full ${statusDotConfig[s]}`} />
-                                <span className="truncate">{cfg.label}</span>
+                                <span className="truncate text-left">{cfg.label}</span>
                               </button>
                             );
                           })}

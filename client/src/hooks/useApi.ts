@@ -119,6 +119,13 @@ export function useDashboardData() {
     await refresh();
   }, [refresh]);
 
+  const wipeRepo = useCallback(async (repoId: string): Promise<void> => {
+    await fetchJson(`/repos/${repoId}`, {
+      method: 'DELETE',
+    });
+    await refresh();
+  }, [refresh]);
+
   return {
     stats,
     files,
@@ -138,5 +145,6 @@ export function useDashboardData() {
     getRepos,
     archiveRepo,
     restoreRepo,
+    wipeRepo,
   };
 }
