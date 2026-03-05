@@ -102,6 +102,15 @@ function initializeSchema(): void {
 }
 
 function runMigrations(): void {
+  // Remove deprecated status "needs_human" by mapping existing rows to pr_open.
+  try {
+    db.prepare("UPDATE files SET status = 'pr_open' WHERE status = 'needs_human'").run();
+    db.prepare("UPDATE activity_log SET old_status = 'pr_open' WHERE old_status = 'needs_human'").run();
+    db.prepare("UPDATE activity_log SET new_status = 'pr_open' WHERE new_status = 'needs_human'").run();
+  } catch {
+    // best-effort migration; keep startup resilient
+  }
+
   // Add duration_seconds to devin_sessions if missing (for existing DBs)
   try {
     db.prepare("SELECT duration_seconds FROM devin_sessions LIMIT 0").get();

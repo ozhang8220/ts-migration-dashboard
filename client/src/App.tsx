@@ -153,7 +153,7 @@ export default function App() {
               {stats && <ProgressSection stats={stats} files={files} />}
 
               <div className="grid grid-cols-5 gap-6">
-                <div className="col-span-2">
+                <div className="col-span-2 h-[400px]">
                   <ActionPanel
                     batches={batches}
                     autoProgress={autoProgress}
@@ -163,7 +163,7 @@ export default function App() {
                     onGetBatchFiles={getBatchFiles}
                   />
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-3 h-[400px]">
                   <ActivityFeed activity={activity} />
                 </div>
               </div>

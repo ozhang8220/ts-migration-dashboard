@@ -19,7 +19,6 @@ const statusEmojis: Record<string, string> = {
   in_progress: '\uD83D\uDD04',
   pr_open: '\uD83D\uDC40',
   merged: '\u2705',
-  needs_human: '\uD83D\uDCAC',
   revision_needed: '\uD83D\uDD01',
   failed: '\u274C',
   skipped: '\u23ED\uFE0F',
@@ -31,7 +30,6 @@ const statusLabels: Record<string, string> = {
   in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
-  needs_human: 'Feedback Needed',
   revision_needed: 'Revision Needed',
   failed: 'Failed',
   skipped: 'Skipped',
@@ -47,9 +45,9 @@ function getDisplayFilename(path: string, status: string): string {
 
 export default function ActivityFeed({ activity }: Props) {
   return (
-    <div className="bg-white rounded-lg border border-[#E5E7EB] p-5 flex flex-col h-full" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-      <h2 className="text-[15px] font-semibold text-[#111827] mb-3">Activity Feed</h2>
-      <div className="space-y-0.5 flex-1 overflow-y-auto pr-2">
+    <div className="bg-white rounded-lg border border-[#E5E7EB] p-5 flex flex-col h-full max-h-[400px] overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+      <h2 className="text-[15px] font-semibold text-[#111827] mb-3 sticky top-0 bg-white z-10">Activity Feed</h2>
+      <div className="space-y-0.5 flex-1 min-h-0 overflow-y-auto pr-2">
         {activity.length === 0 ? (
           <p className="text-sm text-[#9CA3AF] text-center py-8">No activity yet</p>
         ) : (

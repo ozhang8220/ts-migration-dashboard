@@ -117,18 +117,18 @@ function detectJsx(content: string): boolean {
 }
 
 function classifyComplexity(loc: number, content: string, hasJsx: boolean): 'low' | 'medium' | 'high' {
-  // Dynamic pattern detection for HIGH complexity (stricter — avoid false positives)
+  // Dynamic pattern detection for HIGH complexity.
+  // Keep this narrow to avoid over-classifying normal files as high.
   const dynamicPatterns = [
-    /\[\s*[a-zA-Z_$][a-zA-Z0-9_$]{1,}\s*\]/,  // obj[variable] — 2+ char identifier (excludes arr[i] loop index)
-    /\.reduce\s*\(\s*\([^)]*\)\s*=>\s*\([^)]*\)\s*=>/,  // .reduce with function composition (curried)
-    /typeof\s+\w+\s*===?\s*['"]function['"]/,  // typeof plugin === 'function' (plugin checks)
+    /\b[a-zA-Z_$][a-zA-Z0-9_$]*\s*\[\s*[a-zA-Z_$][a-zA-Z0-9_$]{1,}\s*\]/, // computed access: obj[variable]
+    /\.reduce\s*\(\s*\([^)]*\)\s*=>\s*[^)]*=>/, // reduce with function-array composition
     /eval\s*\(/,               // eval()
     /new\s+Function\s*\(/,     // new Function()
     /Object\.defineProperty/,  // monkey-patching
     /Object\.assign\s*\(\s*\w+\.prototype/,  // prototype extension
+    /\.prototype\.[a-zA-Z_$][a-zA-Z0-9_$]*\s*=/, // direct prototype patching
     /Proxy\s*\(/,              // Proxy usage
-    /Symbol\.(for|iterator|toStringTag|asyncIterator)\s*\(/,  // meta-programming Symbols
-    /\b(registerPlugin|addPlugin|createPlugin|\.plugin\s*\()/,  // plugin/factory patterns
+    /\b(registerPlugin|addPlugin|createPlugin|createFactory)\s*\(/, // plugin/factory patterns
   ];
 
   const hasDynamicPatterns = dynamicPatterns.some(p => p.test(content));

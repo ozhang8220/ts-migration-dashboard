@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { getDb, logError } from '../database';
-import { updateFileStatus, checkBatchProgression, shouldHaltBatch } from './batch-progression';
+import { updateFileStatus, checkBatchProgression } from './batch-progression';
 
 interface PullRequestPayload {
   action: string;
@@ -101,12 +101,7 @@ export async function handleGitHubWebhook(req: Request, res: Response): Promise<
 
     } else if (action === 'closed' && !pr.merged) {
       console.log(`[webhook] PR #${prNumber} closed without merge for ${file.path}`);
-      updateFileStatus(file.id, 'needs_human', 'PR closed without merge');
-
-      if (file.batch_id) {
-        db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(file.batch_id);
-        shouldHaltBatch(file.batch_id);
-      }
+      updateFileStatus(file.id, 'revision_needed', 'PR closed without merge');
 
       await checkBatchProgression();
     }

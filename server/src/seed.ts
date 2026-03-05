@@ -99,8 +99,8 @@ const files = [
   // PR open (awaiting review)
   { id: 'src/components/Button.jsx', path: 'src/components/Button.jsx', status: 'pr_open', complexity: 'low', loc: 88, dep_depth: 0, import_count: 1, imported_by: 2, pr_url: 'https://github.com/ozhang8220/shopdirect-frontend/pull/3', pr_number: 3 },
 
-  // High complexity — partial conversion with TODOs
-  { id: 'src/services/analytics.js', path: 'src/services/analytics.js', status: 'needs_human', complexity: 'high', loc: 377, dep_depth: 2, import_count: 3, imported_by: 0, error_reason: 'Partial conversion — 3 TODO comments for dynamic event registry and plugin system types', pr_url: 'https://github.com/ozhang8220/shopdirect-frontend/pull/4', pr_number: 4 },
+  // High complexity — open PR pending review
+  { id: 'src/services/analytics.js', path: 'src/services/analytics.js', status: 'pr_open', complexity: 'high', loc: 377, dep_depth: 2, import_count: 3, imported_by: 0, error_reason: 'Open PR contains TODO comments for dynamic event registry and plugin system types', pr_url: 'https://github.com/ozhang8220/shopdirect-frontend/pull/4', pr_number: 4 },
 
   // Pending — not started yet
   { id: 'src/utils/currency.js', path: 'src/utils/currency.js', status: 'pending', complexity: 'low', loc: 91, dep_depth: 0, import_count: 1, imported_by: 1 },
@@ -151,7 +151,7 @@ const transaction = db.transaction(() => {
       f.id, f.path, f.status, f.complexity, f.loc, f.dep_depth,
       f.import_count, f.imported_by,
       f.pr_url || null, f.pr_number || null, f.error_reason || null,
-      f.status === 'merged' || f.status === 'pr_open' || f.status === 'needs_human' ? 'batch-001' : null,
+      f.status === 'merged' || f.status === 'pr_open' ? 'batch-001' : null,
       offset, offset
     );
   }
@@ -198,7 +198,7 @@ const transaction = db.transaction(() => {
     { fileId: 'src/components/Button.jsx', path: 'src/components/Button.jsx', from: 'in_progress', to: 'pr_open', msg: 'Button.jsx → PR Open', offset: -60 },
     { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'pending', to: 'queued', msg: 'analytics.js → Queued', offset: -155 },
     { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'queued', to: 'in_progress', msg: 'analytics.js → In Progress', offset: -145 },
-    { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'in_progress', to: 'needs_human', msg: 'analytics.js → Needs Human ⚠️', offset: -30 },
+    { fileId: 'src/services/analytics.js', path: 'src/services/analytics.js', from: 'in_progress', to: 'pr_open', msg: 'analytics.js → Ready for Review 👀', offset: -30 },
   ];
 
   for (const a of activities) {

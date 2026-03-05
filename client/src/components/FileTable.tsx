@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MigrationFile, FileStatus } from '../types';
+import { getAssigneeDisplayName } from '../utils/assignee';
 
 interface Props {
   files: MigrationFile[];
@@ -12,7 +13,6 @@ const statusConfig: Record<FileStatus, { label: string; classes: string; tooltip
   in_progress: { label: 'In Progress', classes: 'bg-[#DBEAFE] text-[#2563EB]', tooltip: 'Devin is converting the file' },
   pr_open: { label: 'Ready for Review', classes: 'bg-[#FEF3C7] text-[#D97706]', tooltip: 'PR is open — ready to review and merge' },
   merged: { label: 'Completed', classes: 'bg-[#DCFCE7] text-[#16A34A]', tooltip: 'PR merged, conversion complete' },
-  needs_human: { label: 'Feedback Needed', classes: 'bg-[#FED7AA] text-[#EA580C]', tooltip: 'Needs your attention: PR closed without merge, session timed out, or partial conversion' },
   revision_needed: { label: 'Revision Needed', classes: 'bg-[#EDE9FE] text-[#7C3AED]', tooltip: 'PR was rejected — revision needed based on reviewer feedback' },
   failed: { label: 'Failed', classes: 'bg-[#FEE2E2] text-[#DC2626]', tooltip: 'Devin session failed' },
   skipped: { label: 'Skipped', classes: 'bg-[#F3F4F6] text-[#6B7280]', tooltip: 'Skipped by user' },
@@ -24,7 +24,6 @@ const statusDotConfig: Record<FileStatus, string> = {
   in_progress: 'bg-[#2563EB]',
   pr_open: 'bg-[#D97706]',
   merged: 'bg-[#16A34A]',
-  needs_human: 'bg-[#EA580C]',
   revision_needed: 'bg-[#7C3AED]',
   failed: 'bg-[#DC2626]',
   skipped: 'bg-[#9CA3AF]',
@@ -38,15 +37,32 @@ const complexityConfig: Record<string, { dot: string; label: string }> = {
 
 type SortField = 'path' | 'complexity' | 'dep_depth' | 'loc' | 'status';
 
-const allStatuses: FileStatus[] = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
-const selectableStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
-const filterStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'needs_human', 'revision_needed', 'failed', 'skipped'];
+const allStatuses: FileStatus[] = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
+const selectableStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
+const filterStatuses: FileStatus[] = ['pending', 'in_progress', 'pr_open', 'merged', 'revision_needed', 'failed', 'skipped'];
 
 function getDisplayPath(path: string, status: FileStatus): string {
   if (status === 'merged') {
     return path.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
   }
   return path;
+}
+
+function isAutomatedAuthor(author: string): boolean {
+  const normalized = author.toLowerCase();
+  return normalized.includes('[bot]') || normalized.includes('bot') || normalized.includes('devin');
+}
+
+function getHumanReviewerFeedback(feedback: string | null | undefined): string {
+  const text = (feedback || '').trim();
+  if (!text) return '';
+  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const kept = blocks.filter((block) => {
+    const match = block.match(/^\[(?:Review|PR Comment|Comment)\s+by\s+([^\]\(]+?)(?:\s*\(on [^)]+\))?\]:/i);
+    if (!match) return true;
+    return !isAutomatedAuthor(match[1].trim());
+  });
+  return kept.join('\n\n').trim();
 }
 
 function getPriorityLabel(depth: number): string {
@@ -121,7 +137,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
 
   const SortHeader = ({ field, children, className: extraClass }: { field: SortField; children: React.ReactNode; className?: string }) => (
     <th
-      className={`px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider cursor-pointer hover:text-[#111827] select-none ${extraClass || ''}`}
+      className={`px-4 py-2 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider cursor-pointer hover:text-[#111827] select-none ${extraClass || ''}`}
       onClick={() => handleSort(field)}
     >
       <div className="flex items-center gap-1">
@@ -153,19 +169,29 @@ export default function FileTable({ files, onStatusChange }: Props) {
           </select>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
+      <div className="overflow-x-hidden">
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col className="w-[40%]" />
+            <col className="w-[10%]" />
+            <col className="w-[8%]" />
+            <col className="w-[6%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+            <col className="w-[6%]" />
+            <col className="w-[6%]" />
+          </colgroup>
           <thead>
             <tr className="bg-[#F9FAFB]">
-              <SortHeader field="path">File Path</SortHeader>
+              <SortHeader field="path" className="w-[40%]">File Path</SortHeader>
               <SortHeader field="complexity">Complexity</SortHeader>
               <SortHeader field="dep_depth">Priority</SortHeader>
               <SortHeader field="loc">Lines</SortHeader>
               <SortHeader field="status" className="text-center [&>div]:justify-center">Status</SortHeader>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Assignee</th>
-              <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">PR Link</th>
+              <th className="px-4 py-2 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">Assignee</th>
+              <th className="px-4 py-2 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">PR Link</th>
               <th
-                className="px-4 py-3 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider"
+                className="px-4 py-2 text-left text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider"
                 title="Links appear only for sessions started by this dashboard (Start Next Batch)"
               >
                 Devin Session
@@ -176,31 +202,35 @@ export default function FileTable({ files, onStatusChange }: Props) {
             {sortedFiles.map((file) => {
               const statusCfg = statusConfig[file.status];
               const complexityCfg = complexityConfig[file.complexity] || complexityConfig.low;
+              const humanFeedback = file.status === 'revision_needed'
+                ? getHumanReviewerFeedback(file.reviewer_feedback)
+                : '';
+              const errorText = file.status === 'revision_needed'
+                ? (file.error_reason || 'PR closed without merge')
+                : file.error_reason;
+              const compactMeta = file.status === 'revision_needed'
+                ? [humanFeedback ? `Feedback: ${humanFeedback}` : null, errorText].filter(Boolean).join(' · ')
+                : (errorText || '');
 
               return (
                 <tr key={file.id} className="hover:bg-[#F3F4F6] transition-colors">
-                  <td className="px-4 py-3">
-                    <span className="text-sm font-mono text-[#111827]">{getDisplayPath(file.path, file.status)}</span>
-                    {file.status === 'revision_needed' && file.reviewer_feedback && (
-                      <p className="text-[11px] text-[#6B7280] mt-1 truncate" title={file.reviewer_feedback}>
-                        Feedback: {file.reviewer_feedback.slice(0, 100)}{file.reviewer_feedback.length > 100 ? '...' : ''}
-                      </p>
-                    )}
-                    {file.error_reason && (
-                      <p className="text-[11px] text-[#EA580C] mt-1 truncate" title={file.error_reason}>
-                        {file.error_reason}
+                  <td className="px-4 py-2">
+                    <span className="block max-w-full truncate text-sm font-mono text-[#111827]">{getDisplayPath(file.path, file.status)}</span>
+                    {compactMeta && (
+                      <p className="mt-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-4 text-[#6B7280]" title={compactMeta}>
+                        {compactMeta}
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2">
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${complexityCfg.dot}`} />
                       <span className="text-sm text-[#6B7280]">{complexityCfg.label}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-[#6B7280]">{getPriorityLabel(file.dep_depth)}</td>
-                  <td className="px-4 py-3 text-sm text-[#6B7280]">{file.loc}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-2 text-sm text-[#6B7280]">{getPriorityLabel(file.dep_depth)}</td>
+                  <td className="px-4 py-2 text-sm text-[#6B7280]">{file.loc}</td>
+                  <td className="px-4 py-2">
                     <div className="relative mx-auto w-[110px]" data-status-dropdown>
                       <button
                         type="button"
@@ -238,10 +268,14 @@ export default function FileTable({ files, onStatusChange }: Props) {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-[#6B7280]">
-                    {file.assignee || <span className="text-[#D1D5DB]">{"\u2014"}</span>}
+                  <td className="px-4 py-2 text-sm text-[#6B7280]">
+                    {file.assignee ? (
+                      <span className="block max-w-full truncate">{getAssigneeDisplayName(file.assignee)}</span>
+                    ) : (
+                      <span className="text-[#D1D5DB]">{"\u2014"}</span>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-4 py-2 text-sm">
                     {file.pr_url ? (
                       <a
                         href={file.pr_url}
@@ -255,7 +289,7 @@ export default function FileTable({ files, onStatusChange }: Props) {
                       <span className="text-[#D1D5DB]">{"\u2014"}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm" title={!file.devin_url ? 'Session link appears when this dashboard starts the batch' : undefined}>
+                  <td className="px-4 py-2 text-sm" title={!file.devin_url ? 'Session link appears when this dashboard starts the batch' : undefined}>
                     {file.devin_url ? (
                       <a
                         href={file.devin_url}

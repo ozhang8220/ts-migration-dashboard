@@ -86,20 +86,29 @@ export async function githubFetchJson<T>(urlPath: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function extractGitHubUsername(assignee: string): string {
+  const trimmed = assignee.trim();
+  const sep = ' - ';
+  const idx = trimmed.lastIndexOf(sep);
+  if (idx >= 0) return trimmed.slice(idx + sep.length).trim();
+  return trimmed;
+}
+
 export async function assignPullRequestAssignee(
   owner: string,
   repo: string,
   prNumber: number,
   assignee: string
 ): Promise<void> {
-  if (!assignee?.trim()) return;
+  const username = extractGitHubUsername(assignee);
+  if (!username) return;
 
   await githubFetch(`/repos/${owner}/${repo}/issues/${prNumber}/assignees`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ assignees: [assignee.trim()] }),
+    body: JSON.stringify({ assignees: [username] }),
   });
 }
 

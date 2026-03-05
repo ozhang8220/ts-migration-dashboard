@@ -23,7 +23,6 @@ const fileStatusLabels: Record<string, string> = {
   in_progress: 'In Progress',
   pr_open: 'Ready for Review',
   merged: 'Completed',
-  needs_human: 'Feedback Needed',
   revision_needed: 'Revision Needed',
   failed: 'Failed',
   skipped: 'Skipped',
@@ -36,11 +35,11 @@ const batchTypeLabels: Record<string, string> = {
 };
 
 function getDisplayFilename(path: string, status: string): string {
-  const filename = path.split('/').pop() || path;
+  const normalizedPath = path.startsWith('src/') ? path.slice(4) : path;
   if (status === 'merged') {
-    return filename.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
+    return normalizedPath.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts');
   }
-  return filename;
+  return normalizedPath;
 }
 
 export default function ActionPanel({ batches, autoProgress, onStartBatch, onToggleAutoProgress, onResumeBatch, onGetBatchFiles }: Props) {
@@ -48,7 +47,6 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
   const [batchType, setBatchType] = useState<BatchType>('new_conversions');
   const [assignee, setAssignee] = useState('');
   const [isStarting, setIsStarting] = useState(false);
-  const [lastResult, setLastResult] = useState<BatchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
   const [batchFilesCache, setBatchFilesCache] = useState<Record<string, MigrationFile[]>>({});
@@ -56,13 +54,19 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
 
   const activeBatch = batches.find((b) => b.status === 'running');
   const haltedBatch = batches.find((b) => b.status === 'halted');
+  const assigneeTrimmed = assignee.trim();
+  const assigneeFormatRegex = /^.+\s-\s[a-zA-Z0-9](?:-?[a-zA-Z0-9]){0,38}$/;
+  const isAssigneeValid = assigneeFormatRegex.test(assigneeTrimmed);
 
   const handleStart = async () => {
+    if (!isAssigneeValid) {
+      setError('Assignee is required. Use format: First Last - github_username');
+      return;
+    }
     setIsStarting(true);
     setError(null);
     try {
-      const result = await onStartBatch(batchSize, assignee.trim() || undefined, batchType);
-      setLastResult(result);
+      await onStartBatch(batchSize, assigneeTrimmed || undefined, batchType);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start batch');
     } finally {
@@ -99,7 +103,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
   };
 
   return (
-    <div className="bg-white rounded-lg border border-[#E5E7EB] p-5 flex flex-col h-full" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+    <div className="bg-white rounded-lg border border-[#E5E7EB] p-5 flex flex-col h-full max-h-[400px] overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
       <h2 className="text-[15px] font-semibold text-[#111827] mb-3">Batch Control</h2>
 
       {haltedBatch && (
@@ -144,6 +148,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
               onChange={(e) => setBatchSize(Number(e.target.value))}
               className="h-9 bg-white border border-[#E5E7EB] rounded-md px-2.5 text-sm text-[#374151] focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
+              <option value={1}>1 file</option>
               <option value={3}>3 files</option>
               <option value={5}>5 files</option>
               <option value={8}>8 files</option>
@@ -163,7 +168,7 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
 
           <button
             onClick={handleStart}
-            disabled={isStarting}
+            disabled={isStarting || !isAssigneeValid}
             className="h-9 px-4 bg-[#111827] hover:bg-[#1F2937] disabled:bg-[#D1D5DB] text-white font-medium rounded-md text-sm transition-colors whitespace-nowrap"
           >
             {isStarting ? 'Starting...' : 'Start Batch'}
@@ -193,12 +198,6 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         </div>
       )}
 
-      {lastResult && !error && (
-        <div className="mt-2 p-2 bg-[#DCFCE7] border border-green-200 rounded-md text-xs text-[#16A34A]">
-          Batch <span className="font-mono">{lastResult.batchId}</span> {"\u2014"} {lastResult.filesQueued} files added
-        </div>
-      )}
-
       {activeBatch && (
         <div className="mt-2 p-3 bg-[#DBEAFE] border border-blue-200 rounded-lg">
           <div className="flex items-center gap-2 mb-1">
@@ -213,12 +212,12 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
         </div>
       )}
 
-      {/* Batch History - scrollable to fill remaining space */}
+      {/* Batch History zone (scrollable). Top controls remain fixed. */}
       {batches.length > 0 && (
-        <div className="mt-3 flex-1 flex flex-col min-h-0">
+        <div className="mt-3 flex-1 min-h-0 flex flex-col overflow-hidden">
           <h3 className="text-[13px] font-medium text-[#6B7280] mb-2">Batch History</h3>
           <div className="space-y-1 flex-1 overflow-y-auto">
-            {batches.slice(0, 25).map((batch) => {
+            {batches.slice(0, 2).map((batch) => {
               const isExpanded = expandedBatchId === batch.id;
               const bFiles = batchFilesCache[batch.id];
               const isLoading = loadingBatchFiles === batch.id;
@@ -276,7 +275,6 @@ export default function ActionPanel({ batches, autoProgress, onStartBatch, onTog
                                 <span className={`${
                                   file.status === 'merged' ? 'text-[#16A34A]' :
                                   file.status === 'failed' ? 'text-[#DC2626]' :
-                                  file.status === 'needs_human' ? 'text-[#EA580C]' :
                                   file.status === 'revision_needed' ? 'text-[#7C3AED]' :
                                   'text-[#6B7280]'
                                 }`}>{statusLabel}</span>

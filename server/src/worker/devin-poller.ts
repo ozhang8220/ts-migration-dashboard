@@ -1,7 +1,7 @@
 import { getDb, logError } from '../database';
 import { getSession, isDevinConfigured } from '../devin/client';
-import { assignPullRequestAssignee, githubFetchJson } from '../github/api';
-import { updateFileStatus, shouldHaltBatch, getRepoConfig } from './batch-progression';
+import { assignPullRequestAssignee } from '../github/api';
+import { updateFileStatus, checkBatchProgression, getRepoConfig } from './batch-progression';
 
 const POLL_INTERVAL_MS = 15_000; // 15 seconds — faster updates when Devin creates PRs
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -17,22 +17,6 @@ interface DevinSessionRow {
 
 interface FileAssignmentRow {
   assignee: string | null;
-}
-
-interface PullRequestDetails {
-  body: string | null;
-}
-
-function hasNeedsHumanIndicators(prBody: string | null | undefined): boolean {
-  if (!prBody) return false;
-  const normalized = prBody.toLowerCase();
-  return (
-    normalized.includes('todo') ||
-    normalized.includes('partial') ||
-    normalized.includes('needs human') ||
-    normalized.includes('needs manual') ||
-    prBody.includes('⚠')
-  );
 }
 
 function computeDurationSeconds(startedAt: string | null): number | null {
@@ -71,12 +55,8 @@ async function pollDevinSessions(): Promise<void> {
             "UPDATE devin_sessions SET status = 'timed_out', completed_at = datetime('now'), duration_seconds = ? WHERE id = ?"
           ).run(duration, session.id);
 
-          updateFileStatus(session.file_id, 'needs_human', 'Devin session timed out after 30 minutes');
-
-          if (session.batch_id) {
-            db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(session.batch_id);
-            shouldHaltBatch(session.batch_id);
-          }
+          updateFileStatus(session.file_id, 'pr_open', 'Devin session timed out after 30 minutes');
+          await checkBatchProgression();
           continue;
         }
       }
@@ -113,26 +93,8 @@ async function pollDevinSessions(): Promise<void> {
           "UPDATE devin_sessions SET status = 'completed', completed_at = datetime('now'), pr_url = ?, pr_number = ?, duration_seconds = ? WHERE id = ?"
         ).run(prUrl, prNumber, duration, session.id);
 
-        let nextStatus: 'pr_open' | 'needs_human' = 'pr_open';
-        if (prNumber) {
-          // If PR body suggests partial/manual work, route to Feedback Needed.
-          try {
-            const config = getRepoConfig();
-            const owner = config?.owner || process.env.GITHUB_OWNER;
-            const repo = config?.repo || process.env.GITHUB_REPO;
-            if (owner && repo) {
-              const pr = await githubFetchJson<PullRequestDetails>(`/repos/${owner}/${repo}/pulls/${prNumber}`);
-              if (hasNeedsHumanIndicators(pr.body)) {
-                nextStatus = 'needs_human';
-              }
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.warn(`[devin-poller] Failed to inspect PR #${prNumber} body, defaulting to Ready for Review: ${msg}`);
-          }
-        }
-
-        updateFileStatus(session.file_id, nextStatus, undefined, prUrl || undefined, prNumber ?? undefined);
+        updateFileStatus(session.file_id, 'pr_open', undefined, prUrl || undefined, prNumber ?? undefined);
+        await checkBatchProgression();
         if (prNumber) {
           const config = getRepoConfig();
           const assignment = db.prepare('SELECT assignee FROM files WHERE id = ?').get(session.file_id) as FileAssignmentRow | undefined;
@@ -147,9 +109,6 @@ async function pollDevinSessions(): Promise<void> {
           }
         }
 
-        // Note: We do NOT increment batch.completed here — that happens in the
-        // github-poller when the PR is actually merged. This avoids double-counting.
-
       } else if (sessionData.status_enum === 'failed' || sessionData.status_enum === 'stopped') {
         console.log(`[devin-poller] Session ${session.devin_session_id} ${sessionData.status_enum}`);
         const duration = computeDurationSeconds(session.started_at);
@@ -160,11 +119,7 @@ async function pollDevinSessions(): Promise<void> {
         ).run(errorMessage, duration, session.id);
 
         updateFileStatus(session.file_id, 'failed', errorMessage);
-
-        if (session.batch_id) {
-          db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(session.batch_id);
-          shouldHaltBatch(session.batch_id);
-        }
+        await checkBatchProgression();
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

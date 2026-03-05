@@ -26,6 +26,10 @@ router.get('/stats', (_req: Request, res: Response) => {
   for (const row of statusRows) {
     byStatus[row.status] = row.count;
   }
+  if (byStatus['needs_human']) {
+    byStatus['pr_open'] = (byStatus['pr_open'] || 0) + byStatus['needs_human'];
+    delete byStatus['needs_human'];
+  }
 
   const complexityRows = db.prepare('SELECT complexity, COUNT(*) as count FROM files' + filesFilter + ' GROUP BY complexity').all(...filesParams) as { complexity: string; count: number }[];
   const byComplexity: Record<string, number> = {};
@@ -88,8 +92,13 @@ router.get('/files', (req: Request, res: Response) => {
     query += ' ORDER BY f.dep_depth ASC, f.path ASC';
   }
 
-  const files = db.prepare(query).all(...params);
-  res.json(files);
+  const files = db.prepare(query).all(...params) as Array<Record<string, unknown>>;
+  const normalizedFiles = files.map((f) => (
+    f.status === 'needs_human'
+      ? { ...f, status: 'pr_open' }
+      : f
+  ));
+  res.json(normalizedFiles);
 });
 
 // GET /api/files/:id
@@ -97,7 +106,7 @@ router.get('/files/:id(*)', (req: Request, res: Response) => {
   const db = getDb();
   const fileId = req.params.id;
 
-  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId);
+  const file = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as Record<string, unknown> | undefined;
   if (!file) {
     res.status(404).json({ error: 'File not found' });
     return;
@@ -105,7 +114,8 @@ router.get('/files/:id(*)', (req: Request, res: Response) => {
 
   const sessions = db.prepare('SELECT * FROM devin_sessions WHERE file_id = ? ORDER BY started_at DESC').all(fileId);
 
-  res.json({ ...file as object, sessions });
+  const normalizedFile = file.status === 'needs_human' ? { ...file, status: 'pr_open' } : file;
+  res.json({ ...normalizedFile, sessions });
 });
 
 // PATCH /api/files/:id
@@ -114,7 +124,7 @@ router.patch('/files/:id(*)', (req: Request, res: Response) => {
   const fileId = req.params.id;
   const { status } = req.body;
 
-  const validStatuses = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'needs_human', 'failed', 'skipped', 'revision_needed'];
+  const validStatuses = ['pending', 'queued', 'in_progress', 'pr_open', 'merged', 'failed', 'skipped', 'revision_needed'];
   if (!status || !validStatuses.includes(status)) {
     res.status(400).json({ error: 'Invalid status. Must be one of: ' + validStatuses.join(', ') });
     return;
@@ -158,9 +168,18 @@ router.post('/batches', async (req: Request, res: Response) => {
     const batchSize = req.body.batchSize || 5;
     const assigneeRaw = typeof req.body.assignee === 'string' ? req.body.assignee.trim() : '';
     const assignee = assigneeRaw.length > 0 ? assigneeRaw : undefined;
+    if (!assignee) {
+      res.status(400).json({ error: 'Assignee is required. Use format: First Last - github_username' });
+      return;
+    }
+
+    const sep = ' - ';
+    const splitIdx = assignee.lastIndexOf(sep);
+    const namePart = splitIdx >= 0 ? assignee.slice(0, splitIdx).trim() : '';
+    const username = splitIdx >= 0 ? assignee.slice(splitIdx + sep.length).trim() : '';
     const githubUsernameRegex = /^[a-zA-Z0-9](?:-?[a-zA-Z0-9]){0,38}$/;
-    if (assignee && !githubUsernameRegex.test(assignee)) {
-      res.status(400).json({ error: 'Invalid assignee. Use a valid GitHub username.' });
+    if (!namePart || !username || !githubUsernameRegex.test(username)) {
+      res.status(400).json({ error: 'Invalid assignee. Use format: First Last - github_username' });
       return;
     }
 

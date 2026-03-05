@@ -1,9 +1,9 @@
 import { getDb, logError } from '../database';
 import { assignPullRequestAssignee, githubFetch } from '../github/api';
-import { checkBatchProgression, updateFileStatus, getRepoConfig, shouldHaltBatch } from './batch-progression';
+import { checkBatchProgression, updateFileStatus, getRepoConfig } from './batch-progression';
 
-const POLL_INTERVAL_MS = 120_000; // 2 minutes for merged-PR check
-const SYNC_IN_PROGRESS_INTERVAL_MS = 30_000; // 30 seconds — detect new PRs for in_progress files
+const POLL_INTERVAL_MS = 30_000; // 30 seconds for merged-PR check
+const SYNC_IN_PROGRESS_INTERVAL_MS = 10_000; // 10 seconds — detect new PRs for in_progress files
 
 interface FileRow {
   id: string;
@@ -12,6 +12,11 @@ interface FileRow {
   assignee?: string | null;
   pr_number: number;
   batch_id: string | null;
+}
+
+function isAutomatedReviewer(login?: string | null): boolean {
+  const normalized = (login || '').toLowerCase();
+  return normalized.includes('[bot]') || normalized.includes('bot') || normalized.includes('devin');
 }
 
 /** Branch name for a file: ts-migrate/src-utils-foo -> src/utils/foo.js */
@@ -61,6 +66,7 @@ async function syncInProgressWithPRs(): Promise<void> {
           "UPDATE devin_sessions SET pr_url = ?, pr_number = ?, status = 'completed', completed_at = datetime('now') WHERE file_id = ?"
         ).run(pr.html_url, pr.number, file.id);
         updateFileStatus(file.id, 'pr_open', undefined, pr.html_url, pr.number);
+        await checkBatchProgression();
         if (file.assignee) {
           try {
             await assignPullRequestAssignee(owner, repo, pr.number, file.assignee);
@@ -108,10 +114,6 @@ async function pollGitHubPRs(): Promise<void> {
         console.log(`[github-poller] PR #${file.pr_number} merged for ${file.path}`);
         updateFileStatus(file.id, 'merged');
 
-        if (file.batch_id) {
-          db.prepare("UPDATE batches SET completed = completed + 1 WHERE id = ?").run(file.batch_id);
-        }
-
         await checkBatchProgression();
 
       } else if (pr.state === 'closed') {
@@ -134,18 +136,18 @@ async function pollGitHubPRs(): Promise<void> {
 
           const feedbackParts: string[] = [];
           for (const review of (reviews as Array<{ body?: string; user?: { login?: string } }>)) {
-            if (review.body?.trim()) {
+            if (review.body?.trim() && !isAutomatedReviewer(review.user?.login)) {
               feedbackParts.push(`[Review by ${review.user?.login || 'unknown'}]: ${review.body}`);
             }
           }
           for (const comment of (prComments as Array<{ body?: string; user?: { login?: string }; path?: string }>)) {
-            if (comment.body?.trim()) {
+            if (comment.body?.trim() && !isAutomatedReviewer(comment.user?.login)) {
               const fileRef = comment.path ? ` (on ${comment.path})` : '';
               feedbackParts.push(`[PR Comment by ${comment.user?.login || 'unknown'}${fileRef}]: ${comment.body}`);
             }
           }
           for (const comment of (issueComments as Array<{ body?: string; user?: { login?: string } }>)) {
-            if (comment.body?.trim()) {
+            if (comment.body?.trim() && !isAutomatedReviewer(comment.user?.login)) {
               feedbackParts.push(`[Comment by ${comment.user?.login || 'unknown'}]: ${comment.body}`);
             }
           }
@@ -165,11 +167,6 @@ async function pollGitHubPRs(): Promise<void> {
         db.prepare(
           "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (?, ?, 'pr_open', 'revision_needed', ?, ?, datetime('now'))"
         ).run(file.id, file.path, `${file.path} \u2192 Revision Needed \uD83D\uDD01`, fileRepoId);
-
-        if (file.batch_id) {
-          db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(file.batch_id);
-          shouldHaltBatch(file.batch_id);
-        }
 
         await checkBatchProgression();
       }

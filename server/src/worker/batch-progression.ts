@@ -160,15 +160,15 @@ export async function checkBatchProgression(): Promise<void> {
   ).get(repoId) as BatchRow | undefined;
 
   if (!currentBatch) {
-    const pendingCount = (db.prepare(
-      "SELECT COUNT(*) as count FROM files WHERE status = 'pending' AND repo_id = ?"
+    const remainingCount = (db.prepare(
+      "SELECT COUNT(*) as count FROM files WHERE status IN ('pending', 'revision_needed', 'failed') AND repo_id = ?"
     ).get(repoId) as { count: number }).count;
 
-    if (pendingCount > 0) {
-      console.log(`[batch-progression] No active batch, ${pendingCount} files pending — auto-starting`);
+    if (remainingCount > 0) {
+      console.log(`[batch-progression] No active batch, ${remainingCount} files pending/retry — auto-starting`);
       // Wait 10 seconds to let GitHub update the main branch
       setTimeout(() => {
-        startNextBatch(5).catch(err => {
+        startNextBatch(5, undefined, 'all').catch(err => {
           console.error('[batch-progression] Auto-start failed:', err);
           logError('batch_progression', 'Auto-start failed', err instanceof Error ? err.message : String(err));
         });
@@ -182,14 +182,16 @@ export async function checkBatchProgression(): Promise<void> {
     'SELECT * FROM files WHERE batch_id = ?'
   ).all(currentBatch.id) as FileRow[];
 
-  const terminalStatuses = ['merged', 'failed', 'needs_human', 'skipped', 'revision_needed'];
+  // A migration batch is considered done once every file has reached PR-created
+  // or terminal review-required states. Merging is tracked separately afterwards.
+  const terminalStatuses = ['pr_open', 'failed', 'skipped', 'revision_needed', 'merged'];
   const allTerminal = batchFiles.every(f => terminalStatuses.includes(f.status));
 
   if (!allTerminal) return;
 
   // 3. Mark batch as completed
-  const failed = batchFiles.filter(f => ['failed', 'needs_human'].includes(f.status)).length;
-  const completed = batchFiles.filter(f => f.status === 'merged').length;
+  const failed = batchFiles.filter(f => f.status === 'failed').length;
+  const completed = batchFiles.filter(f => ['pr_open', 'merged'].includes(f.status)).length;
   const newStatus = failed > 0 ? 'partial_failure' : 'completed';
 
   db.prepare(
@@ -200,13 +202,13 @@ export async function checkBatchProgression(): Promise<void> {
 
   // 4. Check if there are more pending files for this repo
   const remaining = (db.prepare(
-    "SELECT COUNT(*) as count FROM files WHERE status = 'pending' AND repo_id = ?"
+    "SELECT COUNT(*) as count FROM files WHERE status IN ('pending', 'revision_needed', 'failed') AND repo_id = ?"
   ).get(repoId) as { count: number }).count;
 
   if (remaining > 0) {
-    console.log(`[batch-progression] ${remaining} files remaining — starting next batch in 10s`);
+    console.log(`[batch-progression] ${remaining} files remaining (including retries) — starting next batch in 10s`);
     setTimeout(() => {
-      startNextBatch(5).catch(err => {
+      startNextBatch(5, undefined, 'all').catch(err => {
         console.error('[batch-progression] Auto-start failed:', err);
         logError('batch_progression', 'Auto-start failed', err instanceof Error ? err.message : String(err));
       });
@@ -251,6 +253,7 @@ export async function startNextBatch(
 
   // Gather files based on batch type
   let revisionFiles: RevisionFileRow[] = [];
+  let retryFiles: FileRow[] = [];
   let pendingFiles: FileRow[] = [];
 
   if (batchType === 'revisions' || batchType === 'all') {
@@ -261,7 +264,17 @@ export async function startNextBatch(
     ).all(repoId, batchSize) as RevisionFileRow[];
   }
 
-  const remainingSlots = batchSize - revisionFiles.length;
+  const remainingAfterRevisions = batchSize - revisionFiles.length;
+
+  if ((batchType === 'revisions' || batchType === 'all') && remainingAfterRevisions > 0) {
+    retryFiles = db.prepare(
+      `SELECT * FROM files WHERE status = 'failed' AND repo_id = ?
+       ORDER BY updated_at ASC
+       LIMIT ?`
+    ).all(repoId, remainingAfterRevisions) as FileRow[];
+  }
+
+  const remainingSlots = batchSize - revisionFiles.length - retryFiles.length;
 
   if ((batchType === 'new_conversions' || batchType === 'all') && remainingSlots > 0) {
     pendingFiles = db.prepare(
@@ -273,12 +286,12 @@ export async function startNextBatch(
     ).all(repoId, batchType === 'new_conversions' ? batchSize : remainingSlots) as FileRow[];
   }
 
-  const totalFiles = revisionFiles.length + pendingFiles.length;
+  const totalFiles = revisionFiles.length + retryFiles.length + pendingFiles.length;
   if (totalFiles === 0) {
     if (batchType === 'revisions') {
-      throw new Error('No revision_needed files available');
+      throw new Error('No revision_needed or failed files available');
     } else if (batchType === 'all') {
-      throw new Error('No revision_needed or pending files available');
+      throw new Error('No revision_needed, failed, or pending files available');
     } else {
       throw new Error('No pending files available');
     }
@@ -306,7 +319,7 @@ export async function startNextBatch(
   );
 
   const transaction = db.transaction(() => {
-    insertBatch.run(batchId, repoId, effectiveBatchType, totalFiles, revisionFiles.length, pendingFiles.length);
+    insertBatch.run(batchId, repoId, effectiveBatchType, totalFiles, revisionFiles.length + retryFiles.length, pendingFiles.length);
     for (const file of revisionFiles) {
       if (normalizedAssignee) {
         updateFileQueued.run(batchId, normalizedAssignee, file.id);
@@ -323,15 +336,23 @@ export async function startNextBatch(
       }
       insertActivity.run(file.id, file.path, 'pending', 'queued', `${file.path} \u2192 Queued (Batch ${batchId})`, repoId);
     }
+    for (const file of retryFiles) {
+      if (normalizedAssignee) {
+        updateFileQueued.run(batchId, normalizedAssignee, file.id);
+      } else {
+        updateFileQueued.run(batchId, file.id);
+      }
+      insertActivity.run(file.id, file.path, 'failed', 'queued', `${file.path} \u2192 Queued for Retry (Batch ${batchId})`, repoId);
+    }
   });
 
   transaction();
 
   // Log batch start to activity
   const batchTypeLabel = effectiveBatchType === 'all'
-    ? `${revisionFiles.length} revisions + ${pendingFiles.length} new`
+    ? `${revisionFiles.length + retryFiles.length} retries/revisions + ${pendingFiles.length} new`
     : effectiveBatchType === 'revisions'
-    ? `${revisionFiles.length} revisions`
+    ? `${revisionFiles.length + retryFiles.length} retries/revisions`
     : `${pendingFiles.length} new conversions`;
   db.prepare(
     "INSERT INTO activity_log (file_id, file_path, old_status, new_status, message, repo_id, created_at) VALUES (NULL, NULL, NULL, 'running', ?, ?, datetime('now'))"
@@ -421,6 +442,55 @@ export async function startNextBatch(
         const errorMsg = err instanceof Error ? err.message : 'Failed to process revision';
         console.error(`[batch] Failed to process revision for ${file.path}:`, errorMsg);
         logError('batch_create', `Failed to process revision for ${file.path}`, errorMsg);
+
+        db.prepare(
+          "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
+        ).run(errorMsg, file.id);
+
+        insertActivity.run(file.id, file.path, 'queued', 'failed', `${file.path} \u2192 Failed (${errorMsg})`, repoId);
+        db.prepare("UPDATE batches SET failed = failed + 1 WHERE id = ?").run(batchId);
+
+        if (shouldHaltBatch(batchId)) break;
+      }
+    }
+
+    // Process new conversion files (same as before)
+    for (const file of retryFiles) {
+      try {
+        const prompt = buildMigrationPrompt(
+          {
+            path: file.path,
+            loc: file.loc,
+            complexity: file.complexity,
+            importedBy: file.imported_by,
+            depDepth: file.dep_depth,
+          },
+          { repoFullName, baseBranch, alreadyConverted }
+        );
+
+        const session = await createSessionWithRetry(
+          prompt,
+          file.path,
+          3,
+          MIGRATION_STRUCTURED_OUTPUT_SCHEMA as Record<string, unknown>,
+          repoFullName
+        );
+
+        const sessionId = `sess-${uuidv4().slice(0, 8)}`;
+        db.prepare(
+          "INSERT INTO devin_sessions (id, devin_session_id, file_id, batch_id, repo_id, status, devin_url, started_at) VALUES (?, ?, ?, ?, ?, 'running', ?, datetime('now'))"
+        ).run(sessionId, session.session_id, file.id, batchId, repoId, session.url);
+
+        db.prepare(
+          "UPDATE files SET status = 'in_progress', error_reason = NULL, updated_at = datetime('now') WHERE id = ?"
+        ).run(file.id);
+
+        insertActivity.run(file.id, file.path, 'queued', 'in_progress', `${file.path} \u2192 In Progress (Retry Started)`, repoId);
+        console.log(`[batch] Created retry Devin session for ${file.path}: ${session.session_id}`);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to create Devin session';
+        console.error(`[batch] Failed to create retry Devin session for ${file.path}:`, errorMsg);
+        logError('batch_create', `Failed to create retry session for ${file.path}`, errorMsg);
 
         db.prepare(
           "UPDATE files SET status = 'failed', error_reason = ?, updated_at = datetime('now') WHERE id = ?"
