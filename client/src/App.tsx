@@ -32,6 +32,9 @@ export default function App() {
     toggleAutoProgress,
     resumeBatch,
     getBatchFiles,
+    getRepos,
+    archiveRepo,
+    restoreRepo,
   } = useDashboardData();
 
   const [showRepoModal, setShowRepoModal] = useState(false);
@@ -76,6 +79,9 @@ export default function App() {
         onAddRepo={() => setShowRepoModal(true)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onGetRepos={getRepos}
+        onArchiveRepo={archiveRepo}
+        onRestoreRepo={restoreRepo}
       />
 
       {/* Main content area */}

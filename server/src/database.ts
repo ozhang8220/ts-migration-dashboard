@@ -37,6 +37,7 @@ function initializeSchema(): void {
       pr_url TEXT,
       pr_number INTEGER,
       error_reason TEXT,
+      reviewer_feedback TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -44,9 +45,12 @@ function initializeSchema(): void {
     CREATE TABLE IF NOT EXISTS batches (
       id TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'running',
+      batch_type TEXT NOT NULL DEFAULT 'new_conversions',
       total_files INTEGER,
       completed INTEGER DEFAULT 0,
       failed INTEGER DEFAULT 0,
+      revision_count INTEGER DEFAULT 0,
+      new_count INTEGER DEFAULT 0,
       started_at TEXT DEFAULT (datetime('now')),
       completed_at TEXT
     );
@@ -82,6 +86,7 @@ function initializeSchema(): void {
       repo TEXT NOT NULL,
       branch TEXT NOT NULL DEFAULT 'main',
       auto_progress INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
       analyzed_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -116,6 +121,39 @@ function runMigrations(): void {
     db.prepare("SELECT assignee FROM files LIMIT 0").get();
   } catch {
     try { db.exec("ALTER TABLE files ADD COLUMN assignee TEXT"); } catch { /* already exists */ }
+  }
+
+  // Add archived to repo_config if missing
+  try {
+    db.prepare("SELECT archived FROM repo_config LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE repo_config ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  }
+
+  // Add reviewer_feedback to files if missing
+  try {
+    db.prepare("SELECT reviewer_feedback FROM files LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE files ADD COLUMN reviewer_feedback TEXT"); } catch { /* already exists */ }
+  }
+
+  // Add batch_type to batches if missing
+  try {
+    db.prepare("SELECT batch_type FROM batches LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE batches ADD COLUMN batch_type TEXT NOT NULL DEFAULT 'new_conversions'"); } catch { /* already exists */ }
+  }
+
+  // Add revision_count and new_count to batches if missing
+  try {
+    db.prepare("SELECT revision_count FROM batches LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE batches ADD COLUMN revision_count INTEGER DEFAULT 0"); } catch { /* already exists */ }
+  }
+  try {
+    db.prepare("SELECT new_count FROM batches LIMIT 0").get();
+  } catch {
+    try { db.exec("ALTER TABLE batches ADD COLUMN new_count INTEGER DEFAULT 0"); } catch { /* already exists */ }
   }
 
   // Per-repo persistence: add repos table and repo_id columns

@@ -21,7 +21,8 @@ interface PullRequestInfo {
 
 interface GetSessionResponse {
   session_id: string;
-  status_enum: string;
+  status_enum?: string;
+  status?: string;
   url: string;
   structured_output?: Record<string, unknown>;
   pull_request?: PullRequestInfo | null;
@@ -110,6 +111,28 @@ export async function createSessionWithRetry(
 
   // Unreachable but TypeScript needs it
   throw new Error('createSessionWithRetry: unreachable');
+}
+
+/**
+ * Send a follow-up message to an existing Devin session.
+ * Used for revision batches — sends reviewer feedback to the original session.
+ */
+export async function sendSessionMessage(sessionId: string, message: string): Promise<void> {
+  const token = getToken();
+
+  const response = await fetch(`${DEVIN_API_BASE_URL}/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Devin API sendSessionMessage failed (${response.status}): ${errorBody}`);
+  }
 }
 
 export async function getSession(sessionId: string): Promise<GetSessionResponse> {

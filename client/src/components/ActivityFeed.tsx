@@ -20,6 +20,7 @@ const statusEmojis: Record<string, string> = {
   pr_open: '\uD83D\uDC40',
   merged: '\u2705',
   needs_human: '\uD83D\uDCAC',
+  revision_needed: '\uD83D\uDD01',
   failed: '\u274C',
   skipped: '\u23ED\uFE0F',
 };
@@ -31,6 +32,7 @@ const statusLabels: Record<string, string> = {
   pr_open: 'Ready for Review',
   merged: 'Completed',
   needs_human: 'Feedback Needed',
+  revision_needed: 'Revision Needed',
   failed: 'Failed',
   skipped: 'Skipped',
 };
